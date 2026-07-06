@@ -7,9 +7,10 @@
 #define CODE_SEGMENT_MAX_CAPACITY 1024
 
 typedef enum {
+  STACKY_OK,
   STACKY_STACK_OVERFLOW,
   STACKY_STACK_UNDERFLOW,
-} StackyErrorStates;
+} StackyErrorState;
 
 typedef enum {
   INSTRUCTION_PUSH,
@@ -43,15 +44,17 @@ void test_main(void);
  * @stacky: The virtual machine.
  * @value: The value to push
 */
-void stacky_push_value(Stacky *stacky, int64_t value) {
+StackyErrorState stacky_push_value(Stacky *stacky, int64_t value) {
   assert(stacky != NULL);
 
   if(stacky->stack_pointer >= STACK_MAX_CAPACITY) {
     fprintf(stderr, "stacky_vm error: cannot push value, maximum stack capacity reached!\n");
-    exit(STACKY_STACK_OVERFLOW);
+    return STACKY_STACK_OVERFLOW;
   }
 
   stacky->stack[stacky->stack_pointer++] = value;
+
+  return STACKY_OK;
 }
 
 /*
@@ -59,57 +62,85 @@ void stacky_push_value(Stacky *stacky, int64_t value) {
 * @stacky: The virtual machine.
 * Returns: the popped value
 */
-int64_t stacky_pop_value(Stacky *stacky) {
+StackyErrorState stacky_pop_value(Stacky *stacky, int64_t *value_out) {
   assert(stacky != NULL);
 
   if(stacky->stack_pointer < 1) {
     fprintf(stderr, "stacky_vm error: cannot pop value, minimal safe stack position reached\n");
-    exit(STACKY_STACK_UNDERFLOW);
+    return STACKY_STACK_UNDERFLOW;
   }
 
-  return stacky->stack[--stacky->stack_pointer];
+  if(value_out != NULL) {
+    *value_out = stacky->stack[--stacky->stack_pointer];
+  } else {
+    int64_t value = stacky->stack[--stacky->stack_pointer];
+    (void)value;
+  }
+
+  return STACKY_OK;
 }
 
-void stacky_dump_value(Stacky *stacky) {
+StackyErrorState stacky_dump_value(Stacky *stacky) {
   assert(stacky != NULL);
+  assert(stacky->stack_pointer >= 1);
+
+  if(stacky->stack_pointer < 1) {
+    fprintf(stderr, "stacky_vm error: cannot peek value when stack is empty\n");
+    return STACKY_STACK_UNDERFLOW;
+  }
 
   int64_t value = stacky->stack[stacky->stack_pointer - 1];
   fprintf(stdout, "DUMP [%ld]\n", value);
+
+  return STACKY_OK;
 }
 
-void stacky_instruction_add(Stacky *stacky) {
-  int64_t operand_b = stacky_pop_value(stacky);
-  int64_t operand_a = stacky_pop_value(stacky);
+StackyErrorState stacky_instruction_add(Stacky *stacky) {
+  int64_t operand_a = 0;
+  int64_t operand_b = 0;
+
+  StackyErrorState success_b = stacky_pop_value(stacky, &operand_a);
+  if(success_b != STACKY_OK) {
+    return success_b;  
+  }
+
+  StackyErrorState success_a = stacky_pop_value(stacky, &operand_b);
+  if(success_a != STACKY_OK) {
+    return success_a;
+  }
+
   int64_t result = operand_a + operand_b;
 
-  stacky_push_value(stacky, result);
+  return stacky_push_value(stacky, result);
 }
 
 /*
  * Description: Execute the next instruction that the instruction_pointer looks at.
  * @stacky - The virtual machine.
  */
-void stacky_execute_cycle(Stacky *stacky) {
+StackyErrorState stacky_execute_cycle(Stacky *stacky) {
   //TODO(Kay): The instruction_pointer++ might bite us in the ass later when there are relative jumps from the current
   //           position. We should keep that in mind!
   StackyInstruction instruction = stacky->code_segment[stacky->instruction_pointer++]; 
+  StackyErrorState result = STACKY_OK;
 
   switch(instruction.opcode) {
     case INSTRUCTION_PUSH: {
-      stacky_push_value(stacky, instruction.argument);
+      result = stacky_push_value(stacky, instruction.argument);
       break;
     } 
     case INSTRUCTION_POP: {
-      stacky_pop_value(stacky);
+      int64_t value = 0;
+      result = stacky_pop_value(stacky, &value);
       break;
     }
     case INSTRUCTION_ADD: {
       assert(instruction.argument == 0);
-      stacky_instruction_add(stacky);
+      result = stacky_instruction_add(stacky);
       break;
     }
     case INSTRUCTION_DUMP: {
-      stacky_dump_value(stacky);
+      result = stacky_dump_value(stacky);
       break;
     }
     case INSTRUCTION_HALT: {
@@ -117,6 +148,8 @@ void stacky_execute_cycle(Stacky *stacky) {
       break;
     }
   }
+
+  return result;
 }
 
 /*
