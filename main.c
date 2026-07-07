@@ -254,7 +254,31 @@ StackyInstruction emitter_generate_instruction(StackInstructionType opcode, int6
   return result;
 }
 
+void stacky_bce_read_byte_code_from_disk(Stacky *stacky, const char *file_path) {
+  assert(file_path != NULL);
+
+  FILE *input_file_handle = fopen(file_path, "rb");
+  if(input_file_handle == NULL) {
+    fprintf(stderr, "stacky_byte_code_engine error: cannot open file %s: %s\n", file_path, strerror(errno));
+    exit(1);
+  }
+
+  if(fseek(input_file_handle, 0, SEEK_END) < 0) {
+    fprintf(stderr, "stacky_byte_code_engine fseek error %s: %s\n", file_path, strerror(errno));
+    fclose(input_file_handle);
+    exit(1);
+  }
+  
+  size_t file_size = ftell(input_file_handle);
+  rewind(input_file_handle);
+
+  
+  stacky->code_segment_size = fread(stacky->code_segment, sizeof(StackyInstruction), file_size / sizeof(StackyInstruction), input_file_handle);
+  fclose(input_file_handle);
+}
+
 void stacky_bce_write_byte_code_to_disk(StackyInstruction *instructions, size_t code_segment_size, const char *file_path) {
+  assert(file_path != NULL);
   assert(instructions != NULL);
   assert(code_segment_size > 0);
 
@@ -280,12 +304,13 @@ int main(void) {
   #else
   //TODO(Kay): Add Make_Instruction Function
   Stacky stacky_vm = {0};
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
+  /*stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_ADD, 0));
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_DUMP, 0));
+  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_DUMP, 0));*/
 
-  stacky_bce_write_byte_code_to_disk(stacky_vm.code_segment, stacky_vm.code_segment_size, "test_output.sbc");
+  //stacky_bce_write_byte_code_to_disk(stacky_vm.code_segment, stacky_vm.code_segment_size, "test_output.sbc");
+  stacky_bce_read_byte_code_from_disk(&stacky_vm, "test_output.sbc");
 
   for(size_t i = 0; i < stacky_vm.code_segment_size && !stacky_vm.halted; i++) {
     StackyErrorState vm_error_state = stacky_execute_cycle(&stacky_vm);
