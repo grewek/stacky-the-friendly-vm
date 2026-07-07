@@ -16,6 +16,9 @@ typedef enum {
   INSTRUCTION_PUSH,
   INSTRUCTION_POP,
   INSTRUCTION_ADD,
+  INSTRUCTION_SUB,
+  INSTRUCTION_MUL,
+  INSTRUCTION_DIV,
   INSTRUCTION_DUMP,
   INSTRUCTION_HALT,
 } StackInstructionType;
@@ -99,17 +102,74 @@ StackyErrorState stacky_instruction_add(Stacky *stacky) {
   int64_t operand_a = 0;
   int64_t operand_b = 0;
 
-  StackyErrorState success_b = stacky_pop_value(stacky, &operand_a);
+  StackyErrorState success_b = stacky_pop_value(stacky, &operand_b);
   if(success_b != STACKY_OK) {
     return success_b;  
   }
 
-  StackyErrorState success_a = stacky_pop_value(stacky, &operand_b);
+  StackyErrorState success_a = stacky_pop_value(stacky, &operand_a);
   if(success_a != STACKY_OK) {
     return success_a;
   }
 
   int64_t result = operand_a + operand_b;
+
+  return stacky_push_value(stacky, result);
+}
+
+StackyErrorState stacky_instruction_sub(Stacky *stacky) {
+  int64_t operand_a = 0;
+  int64_t operand_b = 0;
+
+  StackyErrorState success_b = stacky_pop_value(stacky, &operand_b);
+  if(success_b != STACKY_OK) {
+    return success_b;
+  }
+
+  StackyErrorState success_a = stacky_pop_value(stacky, &operand_a);
+  if(success_a != STACKY_OK) {
+    return success_a;
+  }
+
+  int64_t result = operand_a - operand_b;
+
+  return stacky_push_value(stacky, result);
+}
+
+StackyErrorState stacky_instruction_div(Stacky *stacky) {
+  int64_t operand_a = 0;
+  int64_t operand_b = 0;
+
+  StackyErrorState success_b = stacky_pop_value(stacky, &operand_b);
+  if(success_b != STACKY_OK) {
+    return success_b;
+  }
+
+  StackyErrorState success_a = stacky_pop_value(stacky, &operand_a);
+  if(success_a != STACKY_OK) {
+    return success_a;
+  }
+
+  int64_t result = operand_a / operand_b;
+
+  return stacky_push_value(stacky, result);
+}
+
+StackyErrorState stacky_instruction_mul(Stacky *stacky) {
+  int64_t operand_a = 0;
+  int64_t operand_b = 0;
+
+  StackyErrorState success_b = stacky_pop_value(stacky, &operand_b);
+  if(success_b != STACKY_OK) {
+    return success_b;
+  }
+
+  StackyErrorState success_a = stacky_pop_value(stacky, &operand_a);
+  if(success_a != STACKY_OK) {
+    return success_a;
+  }
+
+  int64_t result = operand_a * operand_b;
 
   return stacky_push_value(stacky, result);
 }
@@ -137,6 +197,21 @@ StackyErrorState stacky_execute_cycle(Stacky *stacky) {
     case INSTRUCTION_ADD: {
       assert(instruction.argument == 0);
       result = stacky_instruction_add(stacky);
+      break;
+    }
+    case INSTRUCTION_SUB: {
+      assert(instruction.argument == 0);
+      result = stacky_instruction_sub(stacky);
+      break;
+    }
+    case INSTRUCTION_DIV: {
+      assert(instruction.argument == 0);
+      result = stacky_instruction_div(stacky);
+      break;
+    }
+    case INSTRUCTION_MUL: {
+      assert(instruction.argument == 0);
+      result = stacky_instruction_mul(stacky);
       break;
     }
     case INSTRUCTION_DUMP: {
@@ -179,6 +254,26 @@ StackyInstruction emitter_generate_instruction(StackInstructionType opcode, int6
   return result;
 }
 
+void stacky_bce_write_byte_code_to_disk(StackyInstruction *instructions, size_t code_segment_size, const char *file_path) {
+  assert(instructions != NULL);
+  assert(code_segment_size > 0);
+
+  FILE *output_file_handle = fopen(file_path, "wb");
+  if(output_file_handle == NULL) {
+    fprintf(stderr, "stacky_byte_code_engine error: cannot open file %s: %s\n", file_path, strerror(errno));
+    exit(1);
+  }
+
+  size_t bytes_written = fwrite(instructions, sizeof(StackyInstruction), code_segment_size, output_file_handle);
+  if(bytes_written < code_segment_size) {
+    fprintf(stderr, "stacky_byte_code_engine error: cannot write bytes to file %s: %s\n", file_path, strerror(errno));
+    fclose(output_file_handle);
+    exit(1);
+  }
+
+  fclose(output_file_handle);
+}
+
 int main(void) {
   #ifdef TEST_MODE
     test_main();
@@ -189,6 +284,8 @@ int main(void) {
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_ADD, 0));
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_DUMP, 0));
+
+  stacky_bce_write_byte_code_to_disk(stacky_vm.code_segment, stacky_vm.code_segment_size, "test_output.sbc");
 
   for(size_t i = 0; i < stacky_vm.code_segment_size && !stacky_vm.halted; i++) {
     StackyErrorState vm_error_state = stacky_execute_cycle(&stacky_vm);
