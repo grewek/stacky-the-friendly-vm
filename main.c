@@ -180,19 +180,22 @@ StackyInstruction emitter_generate_instruction(StackInstructionType opcode, int6
 }
 
 int main(void) {
-  Stacky stacky_vm = {0};
-
   #ifdef TEST_MODE
     test_main();
   #else
   //TODO(Kay): Add Make_Instruction Function
+  Stacky stacky_vm = {0};
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_ADD, 0));
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_DUMP, 0));
 
   for(size_t i = 0; i < stacky_vm.code_segment_size && !stacky_vm.halted; i++) {
-    stacky_execute_cycle(&stacky_vm);
+    StackyErrorState vm_error_state = stacky_execute_cycle(&stacky_vm);
+
+    if(vm_error_state != STACKY_OK) {
+      exit(vm_error_state);
+    }
   }
   #endif
 
