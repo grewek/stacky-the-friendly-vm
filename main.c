@@ -315,6 +315,39 @@ void stacky_bce_write_byte_code_to_disk(StackyInstruction *instructions, size_t 
   fclose(output_file_handle);
 }
 
+char *stacky_assembler_load_source_code_from_file(const char *file_path) {
+  assert(file_path != NULL);
+
+  FILE *source_file_handle = fopen(file_path, "r");
+  if(source_file_handle == NULL) {
+    fprintf(stderr, "stacky_assembler error: cannot open file %s: %s\n", file_path, strerror(errno));
+    exit(1);
+  }
+
+  if(fseek(source_file_handle, 0, SEEK_END) < 0) {
+    fprintf(stderr, "stacky_byte_code_engine fseek error %s: %s\n", file_path, strerror(errno));
+    fclose(source_file_handle);
+    exit(1);
+  }
+  
+  size_t file_size = ftell(source_file_handle);
+  rewind(source_file_handle);
+
+  char *buffer = calloc(file_size, sizeof(char));
+  if(buffer == NULL) {
+    fprintf(stderr, "stacky_assembler error cannot allocate memory for buffer: %s\n", strerror(errno));
+    fclose(source_file_handle);
+    exit(1);
+  }
+  
+  size_t bytes_read = fread(buffer, sizeof(char), file_size, source_file_handle);
+  assert(bytes_read <= file_size);
+
+  fclose(source_file_handle);
+
+  return buffer;
+}
+
 int main(void) {
   #ifdef TEST_MODE
     test_main();
@@ -327,6 +360,9 @@ int main(void) {
   stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_DUMP, 0));*/
 
   //stacky_bce_write_byte_code_to_disk(stacky_vm.code_segment, stacky_vm.code_segment_size, "test_output.sbc");
+  const char *source_code_cstring = stacky_assembler_load_source_code_from_file("examples/addition.asm");
+  LString source_code = lstring_from_cstring(source_code_cstring);
+
   stacky_bce_read_byte_code_from_disk(&stacky_vm, "test_output.sbc");
 
   for(size_t i = 0; i < stacky_vm.code_segment_size && !stacky_vm.halted; i++) {
