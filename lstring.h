@@ -115,7 +115,6 @@ LString lstring_split_by_delimiter(LString *source, const char delimiter) {
       found_delimiter = true;
       split_position = i;
     }
-
   }
 
   LString result = {
@@ -132,4 +131,18 @@ LString lstring_split_by_delimiter(LString *source, const char delimiter) {
   }
 
   return result;
+}
+
+int64_t lstring_to_integer_value(LString repr) {
+  assert(repr.data != NULL);
+  int64_t value = 0;
+  for(size_t i = 0; i < repr.length; i++) {
+    char digit = repr.data[i];
+    value *= 10;
+    if(isdigit(digit)) {
+      value += digit - '0';
+    }
+  }
+
+  return value;
 }
