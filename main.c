@@ -348,22 +348,55 @@ char *stacky_assembler_load_source_code_from_file(const char *file_path) {
   return buffer;
 }
 
+StackyInstruction stacky_assemble_instruction(LString source_line) {
+  assert(source_line.data != NULL);
+
+  LString instruction = lstring_split_by_delimiter(&source_line, ' ');
+  StackyInstruction generated_instruction;
+
+  if(strncmp(instruction.data, "push", 4) == 0) {
+    if(source_line.length == 0) {
+      fprintf(stderr, "stacky_compiler error: mnemonic `push` is missing a value that is pushed onto the stack original instruction is `%.*s`\n",
+              (int)source_line.length, source_line.data);
+    }
+    LString value = lstring_split_by_delimiter(&source_line, ' ');
+    int64_t converted_value = lstring_to_integer_value(value);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, converted_value };
+  }
+  else if (strncmp(instruction.data, "add", 3) == 0) {
+    generated_instruction = (StackyInstruction) { INSTRUCTION_ADD, 0 };
+  }
+  else if (strncmp(instruction.data, "dump", 4) == 0) {
+    generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, 0 };
+  }
+  else {
+    fprintf(stderr, "stacky_compiler error: unknown mnemonic with a length of %ld and a representation of `%.*s` encountered!\n", instruction.length, (int)instruction.length, instruction.data);
+  }
+
+  return generated_instruction;
+}
+void stacky_assemble_file(Stacky *stacky, LString source_code) {
+  assert(source_code.data != NULL);
+
+  while(source_code.length > 0) {
+    LString source_line = lstring_split_by_delimiter(&source_code, '\n');
+    StackyInstruction assembled_instruction = stacky_assemble_instruction(source_line);
+    stacky_push_code_instruction(stacky, assembled_instruction);
+  }
+}
+
 int main(void) {
   #ifdef TEST_MODE
     test_main();
   #else
   //TODO(Kay): Add Make_Instruction Function
   Stacky stacky_vm = {0};
-  /*stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_ADD, 0));
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_DUMP, 0));*/
-
-  //stacky_bce_write_byte_code_to_disk(stacky_vm.code_segment, stacky_vm.code_segment_size, "test_output.sbc");
   const char *source_code_cstring = stacky_assembler_load_source_code_from_file("examples/addition.asm");
   LString source_code = lstring_from_cstring(source_code_cstring);
 
-  stacky_bce_read_byte_code_from_disk(&stacky_vm, "test_output.sbc");
+  stacky_assemble_file(&stacky_vm, source_code);
+
+  //stacky_bce_read_byte_code_from_disk(&stacky_vm, "test_output.sbc");
 
   for(size_t i = 0; i < stacky_vm.code_segment_size && !stacky_vm.halted; i++) {
     StackyErrorState vm_error_state = stacky_execute_cycle(&stacky_vm);
