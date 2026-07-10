@@ -66,10 +66,6 @@ LString lstring_trim_left(LString source) {
     start = i;
   }
 
-  if(start < source.length) {
-    start += 1;
-  }
-
   LString result = {
     .length = source.length - start,
     .data = source.data + start,
@@ -87,21 +83,19 @@ LString lstring_trim_left(LString source) {
 LString lstring_trim_right(LString source) {
   assert(source.data != NULL);
 
-  size_t end = source.length - 1;
-  for(size_t i = end; i > 0 && isspace(source.data[i]); i--) {
-    end = i - source.length;
-    assert(end > 0);
+  size_t end = source.length;
+  for(size_t i = 0; i < source.length && isspace(source.data[source.length - i]); i--) {
+    end = i;
   }
 
+  LString result = source;
   if(end > 0) {
-    end -= 1;
+    result = (LString) {
+      .length = end,
+      .data = source.data,
+    };
   }
-
-  LString result = {
-    .length = source.length - end,
-    .data = source.data,
-  };
-
+ 
   return result;
 }
 
@@ -111,4 +105,31 @@ LString lstring_trim(LString source) {
 
 LString lstring_split_by_delimiter(LString *source, const char delimiter) {
 
+  bool found_delimiter = false;
+  size_t split_position = source->length;
+
+  *source = lstring_trim(*source);
+
+  for(size_t i = 0; i < source->length && !found_delimiter; i++) {
+    if(source->data[i] == delimiter) {
+      found_delimiter = true;
+      split_position = i;
+    }
+
+  }
+
+  LString result = {
+    .length = split_position,
+    .data = source->data,
+  };
+
+  if(split_position < source->length) {
+    source->length -= split_position + 1;
+    source->data += split_position + 1;
+  } else {
+    source->length -= split_position;
+    source->data += split_position;
+  }
+
+  return result;
 }
