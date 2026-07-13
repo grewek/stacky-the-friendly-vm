@@ -369,6 +369,9 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
   else if (strncmp(instruction.data, "dump", 4) == 0) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, 0 };
   }
+  else if (strncmp(instruction.data, "halt"), 4) == 0) {
+    generated_instruction = (StackyInstruction) { INSTRUCTION_HALT, 0 };
+  }
   else {
     fprintf(stderr, "stacky_compiler error: unknown mnemonic with a length of %ld and a representation of `%.*s` encountered!\n", instruction.length, (int)instruction.length, instruction.data);
   }
@@ -385,25 +388,53 @@ void stacky_assemble_file(Stacky *stacky, LString source_code) {
   }
 }
 
-int main(void) {
+void print_usage(void) {
+  fprintf(stdout, "Usage: <mode>\n");
+  fprintf(stdout, "\tcompile - compile an assembly file to bytecode\n");
+  fprintf(stdout, "\trun     - run a bytecode file\n");
+  fprintf(stdout, "\thelp    - print usage\n");
+}
+int main(int argc, char **argv) {
   #ifdef TEST_MODE
     test_main();
   #else
-  //TODO(Kay): Add Make_Instruction Function
+  if (argc < 2) {
+    print_usage();
+    exit(1);
+  }
+
   Stacky stacky_vm = {0};
-  const char *source_code_cstring = stacky_assembler_load_source_code_from_file("examples/addition.asm");
-  LString source_code = lstring_from_cstring(source_code_cstring);
 
-  stacky_assemble_file(&stacky_vm, source_code);
-
-  //stacky_bce_read_byte_code_from_disk(&stacky_vm, "test_output.sbc");
-
-  for(size_t i = 0; i < stacky_vm.code_segment_size && !stacky_vm.halted; i++) {
-    StackyErrorState vm_error_state = stacky_execute_cycle(&stacky_vm);
-
-    if(vm_error_state != STACKY_OK) {
-      exit(vm_error_state);
+  if(strcmp(argv[1], "compile") == 0) {
+    if(argc < 4) {
+      fprintf(stdout, "error: not enough arguments\n");
+      fprintf(stdout, "Usage: ./stacky compile <source_file> <bytecode_output_file>\n");
+      exit(1);
     }
+
+    const char *source_code_buffer = stacky_assembler_load_source_code_from_file(argv[2]);
+    LString source_code = lstring_from_cstring(source_code_buffer);
+    stacky_assemble_file(&stacky_vm, source_code);
+    stacky_bce_write_byte_code_to_disk(stacky_vm.code_segment, stacky_vm.code_segment_size, argv[3]);
+  } else if (strcmp(argv[1], "run") == 0) {
+    if(argc < 3) {
+      fprintf(stdout, "error: not enough argumetns\n");
+      fprintf(stdout, "Usage: ./stacky run <bytecode_file>\n");
+      exit(1);
+    }
+
+    stacky_bce_read_byte_code_from_disk(&stacky_vm, argv[2]);
+    while(!stacky_vm.halted) {
+      StackyErrorState vm_error_state = stacky_execute_cycle(&stacky_vm);
+
+      if(vm_error_state != STACKY_OK) {
+        exit(vm_error_state);
+      }
+    }
+    
+  } else if (strcmp(argv[1], "help") == 0) {
+    print_usage();
+    exit(1);
   }
   #endif
 
