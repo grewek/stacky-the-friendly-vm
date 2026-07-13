@@ -15,10 +15,77 @@ To build the project clone it to your local machine and run the makefile:
 
 ```console
 $ git clone https://grewek/stacky-the-friendly-vm.git
-make stacky
-./stacky
+$ make stacky
+$ ./stacky
 ```
 
+## Instructions
+
+Currently these Instructions are supported by the virtual machine
+
+### Push
+
+Pushes the value to the stack.
+
+Argument: __Immediate value__
+
+Syntax: `push [immediate value]`
+
+### Add
+
+Adds the two values at the top of the stack.
+
+Argument: __None__
+
+Syntax: `add`
+
+### Sub
+
+Subtracts the two values on the top of the stack and push the result.
+
+Argument: __None__
+
+Syntax: `sub`
+
+### Mul
+
+Multiply the two values at the top of the stack and push the result.
+
+Argument: __None__
+
+Syntax: `mul`
+
+### Div
+
+Divide the two values at the top of the stack and push the result.
+
+Argument: __None__
+
+Syntax: `div`
+
+### Jump
+
+Jump to the absolute address and resume execution from there.
+
+Argument: __Absolute Address__ (Boundaries: Addr >= 0)
+
+Syntax: `jmp [address]`
+
+### Dump
+
+Print the value that is on top of the stack to the screen.
+
+Argument: __None__
+
+Syntax: `dump`
+
+### Halt
+
+Put the vm in a halted state
+
+Argument: __None__
+
+Syntax: `halt`
 ## Container
 
 (Section needs to be written)
