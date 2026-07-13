@@ -369,7 +369,7 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
   else if (strncmp(instruction.data, "dump", 4) == 0) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, 0 };
   }
-  else if (strncmp(instruction.data, "halt"), 4) == 0) {
+  else if (strncmp(instruction.data, "halt", 4) == 0) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_HALT, 0 };
   }
   else {
