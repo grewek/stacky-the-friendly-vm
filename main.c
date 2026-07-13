@@ -19,6 +19,7 @@ typedef enum {
   INSTRUCTION_SUB,
   INSTRUCTION_MUL,
   INSTRUCTION_DIV,
+  INSTRUCTION_JUMP,
   INSTRUCTION_DUMP,
   INSTRUCTION_HALT,
 } StackInstructionType;
@@ -214,6 +215,13 @@ StackyErrorState stacky_execute_cycle(Stacky *stacky) {
       result = stacky_instruction_mul(stacky);
       break;
     }
+    case INSTRUCTION_JUMP: {
+      //TODO(Kay):assert that we never leave the boundaries of our buffer, it might be even better to assert that we are always
+      //inside the boundaries of the code size. 
+      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
+      stacky->instruction_pointer = instruction.argument;
+      break;
+    }
     case INSTRUCTION_DUMP: {
       result = stacky_dump_value(stacky);
       break;
@@ -368,6 +376,12 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
   }
   else if (strncmp(instruction.data, "dump", 4) == 0) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, 0 };
+  }
+  else if (strncmp(instruction.data, "jmp", 3) == 0) {
+    
+    LString value = lstring_split_by_delimiter(&source_line, ' ');
+    int64_t converted_value = lstring_to_integer_value(value);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP, converted_value };
   }
   else if (strncmp(instruction.data, "halt", 4) == 0) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_HALT, 0 };
