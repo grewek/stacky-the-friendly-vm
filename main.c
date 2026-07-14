@@ -362,7 +362,8 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
   LString instruction = lstring_split_by_delimiter(&source_line, ' ');
   StackyInstruction generated_instruction;
 
-  if(strncmp(instruction.data, "push", 4) == 0) {
+
+  if(lstring_compare_to_cstring(instruction, "push")) {
     if(source_line.length == 0) {
       fprintf(stderr, "stacky_compiler error: mnemonic `push` is missing a value that is pushed onto the stack original instruction is `%.*s`\n",
               (int)source_line.length, source_line.data);
@@ -371,19 +372,18 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
     int64_t converted_value = lstring_to_integer_value(value);
     generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, converted_value };
   }
-  else if (strncmp(instruction.data, "add", 3) == 0) {
+  else if (lstring_compare_to_cstring(instruction, "add")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_ADD, 0 };
   }
-  else if (strncmp(instruction.data, "dump", 4) == 0) {
+  else if (lstring_compare_to_cstring(instruction, "dump")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, 0 };
   }
-  else if (strncmp(instruction.data, "jmp", 3) == 0) {
-    
+  else if (lstring_compare_to_cstring(instruction, "jmp")) {
     LString value = lstring_split_by_delimiter(&source_line, ' ');
     int64_t converted_value = lstring_to_integer_value(value);
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP, converted_value };
   }
-  else if (strncmp(instruction.data, "halt", 4) == 0) {
+  else if (lstring_compare_to_cstring(instruction, "halt")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_HALT, 0 };
   }
   else {
