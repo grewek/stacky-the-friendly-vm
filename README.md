@@ -31,6 +31,14 @@ Argument: __Immediate value__
 
 Syntax: `push [immediate value]`
 
+### Duplicate
+
+Duplicate the value on the top of the stack, useful for operations that consume the value
+
+__Argument__: __None__
+
+Syntax: `dup`
+
 ### Add
 
 Adds the two values at the top of the stack.
@@ -70,6 +78,22 @@ Jump to the absolute address and resume execution from there.
 Argument: __Absolute Address__ (Boundaries: Addr >= 0)
 
 Syntax: `jmp [address]`
+
+### Jump Equal
+
+Jump to the absolute address when the compared value on the top of the stack __is zero__
+
+Argument: __Absolute Address__ (Boundaries: Addr >= 0)
+
+Syntax: `je [address]`
+
+### Jump Not Equal
+
+Jump to the absolute address when the compared value on the top of the stack __is not zero__
+
+Argument: __Absolute Address__ (Boundaries: Addr >= 0)
+
+Sytnax: `jne [address]`
 
 ### Dump
 
