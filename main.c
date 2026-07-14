@@ -14,12 +14,15 @@ typedef enum {
 
 typedef enum {
   INSTRUCTION_PUSH,
+  INSTRUCTION_DUPLICATE,
   INSTRUCTION_POP,
   INSTRUCTION_ADD,
   INSTRUCTION_SUB,
   INSTRUCTION_MUL,
   INSTRUCTION_DIV,
   INSTRUCTION_JUMP,
+  INSTRUCTION_JUMP_EQUAL,
+  INSTRUCTION_JUMP_NOT_EQUAL,
   INSTRUCTION_DUMP,
   INSTRUCTION_HALT,
 } StackInstructionType;
@@ -57,6 +60,25 @@ StackyErrorState stacky_push_value(Stacky *stacky, int64_t value) {
   }
 
   stacky->stack[stacky->stack_pointer++] = value;
+
+  return STACKY_OK;
+}
+
+StackyErrorState stacky_duplicate_value(Stacky *stacky) {
+  assert(stacky != NULL);
+
+  if(stacky->stack_pointer >= STACK_MAX_CAPACITY) {
+    fprintf(stderr, "stacky_vm error: cannot push value, maximum stack capacity reached!\n");
+    return STACKY_STACK_OVERFLOW;
+  }
+
+  if(stacky->stack_pointer < 1) {
+    fprintf(stderr, "stacky_vm error: cannot pop value, minimal safe stack position reached\n");
+    return STACKY_STACK_UNDERFLOW;
+  } 
+
+  int64_t top_value = stacky->stack[stacky->stack_pointer - 1];
+  stacky->stack[stacky->stack_pointer++] = top_value;
 
   return STACKY_OK;
 }
@@ -175,6 +197,53 @@ StackyErrorState stacky_instruction_mul(Stacky *stacky) {
   return stacky_push_value(stacky, result);
 }
 
+StackyErrorState stacky_instruction_jump_equal(Stacky *stacky, int64_t absolute_offset) {
+  //NOTE(Kay): The compiler needs to make sure, that absolute offsets are always positive and never negative.
+  //           That is why we assert here!
+  assert(absolute_offset >= 0);
+  StackyErrorState state = STACKY_OK;
+
+  if(stacky->stack_pointer - 1 > 0) {
+    int64_t operand_a = stacky->stack[stacky->stack_pointer - 1];
+
+    if(operand_a == 0) {
+      stacky->instruction_pointer = absolute_offset;
+    }
+
+    state = STACKY_OK;
+
+  } else {
+    state = STACKY_STACK_UNDERFLOW;
+  }
+
+  return state;
+}
+
+StackyErrorState stacky_instruction_jump_not_equal(Stacky *stacky, int64_t absolute_offset) {
+  //NOTE(Kay): The compiler needs to make sure, that absolute offsets are always positive and never negative.
+  //           That is why we assert here!
+  assert(absolute_offset >= 0);
+
+  StackyErrorState state = STACKY_OK;
+  int64_t operand_a = stacky->stack[stacky->stack_pointer - 1];
+
+  if(stacky->stack_pointer - 1 > 0) {
+    int64_t operand_a = stacky->stack[stacky->stack_pointer - 1];
+    
+    if(operand_a != 0) {
+      stacky->instruction_pointer = absolute_offset;
+    }
+
+    state = STACKY_OK;
+  }
+
+  if(operand_a != 0) {
+    stacky->instruction_pointer = absolute_offset;
+  }
+
+  return state;
+}
+
 /*
  * Description: Execute the next instruction that the instruction_pointer looks at.
  * @stacky - The virtual machine.
@@ -190,6 +259,10 @@ StackyErrorState stacky_execute_cycle(Stacky *stacky) {
       result = stacky_push_value(stacky, instruction.argument);
       break;
     } 
+    case INSTRUCTION_DUPLICATE: {
+      result = stacky_duplicate_value(stacky);
+      break;
+    }
     case INSTRUCTION_POP: {
       int64_t value = 0;
       result = stacky_pop_value(stacky, &value);
@@ -216,10 +289,18 @@ StackyErrorState stacky_execute_cycle(Stacky *stacky) {
       break;
     }
     case INSTRUCTION_JUMP: {
-      //TODO(Kay):assert that we never leave the boundaries of our buffer, it might be even better to assert that we are always
-      //inside the boundaries of the code size. 
       assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
       stacky->instruction_pointer = instruction.argument;
+      break;
+    }
+    case INSTRUCTION_JUMP_EQUAL: {
+      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_equal(stacky, instruction.argument);
+      break;
+    }
+    case INSTRUCTION_JUMP_NOT_EQUAL: {
+      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_not_equal(stacky, instruction.argument);
       break;
     }
     case INSTRUCTION_DUMP: {
@@ -372,8 +453,14 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
     int64_t converted_value = lstring_to_integer_value(value);
     generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, converted_value };
   }
+  else if (lstring_compare_to_cstring(instruction, "dup")) {
+    generated_instruction = (StackyInstruction) { INSTRUCTION_DUPLICATE, 0 };
+  }
   else if (lstring_compare_to_cstring(instruction, "add")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_ADD, 0 };
+  }
+  else if (lstring_compare_to_cstring(instruction, "sub")) {
+    generated_instruction = (StackyInstruction) { INSTRUCTION_SUB, 0 };
   }
   else if (lstring_compare_to_cstring(instruction, "dump")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, 0 };
@@ -382,6 +469,16 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
     LString value = lstring_split_by_delimiter(&source_line, ' ');
     int64_t converted_value = lstring_to_integer_value(value);
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP, converted_value };
+  }
+  else if (lstring_compare_to_cstring(instruction, "je")) {
+    LString value = lstring_split_by_delimiter(&source_line, ' ');
+    int64_t converted_value = lstring_to_integer_value(value);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_EQUAL, converted_value };
+  }
+  else if (lstring_compare_to_cstring(instruction, "jne")) {
+    LString value = lstring_split_by_delimiter(&source_line, ' ');
+    int64_t converted_value = lstring_to_integer_value(value);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_NOT_EQUAL, converted_value };
   }
   else if (lstring_compare_to_cstring(instruction, "halt")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_HALT, 0 };
@@ -442,6 +539,7 @@ int main(int argc, char **argv) {
       StackyErrorState vm_error_state = stacky_execute_cycle(&stacky_vm);
 
       if(vm_error_state != STACKY_OK) {
+        fprintf(stderr, "Stacky encountered runtime error: %d\n", vm_error_state);
         exit(vm_error_state);
       }
     }
