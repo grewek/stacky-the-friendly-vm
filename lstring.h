@@ -146,3 +146,29 @@ int64_t lstring_to_integer_value(LString repr) {
 
   return value;
 }
+
+
+/*
+ * Description: Compare a LString to a static const char*
+ * a: The first LString to compare
+ * b: The static const char* to compare
+ * Returns: true if the strings are equal, false if they don't
+ */
+bool lstring_compare_to_cstring(const LString a, const char *b) {
+  LString lstring_b = lstring_from_cstring(b);
+    assert(lstring_b.length > 0 && lstring_b.data != NULL);
+
+  bool result = true;
+
+  if(a.length != lstring_b.length) {
+    result = false;
+  }
+
+  for(size_t i = 0; i < a.length && result; i++) {
+    if(a.data[i] != lstring_b.data[i]) {
+      result = false;
+    }
+  }
+
+  return result;
+}
