@@ -133,18 +133,28 @@ LString lstring_split_by_delimiter(LString *source, const char delimiter) {
   return result;
 }
 
-int64_t lstring_to_integer_value(LString repr) {
+bool lstring_to_integer_value(LString repr, int64_t *value_out) {
   assert(repr.data != NULL);
   int64_t value = 0;
-  for(size_t i = 0; i < repr.length; i++) {
+
+  bool is_valid_numeric_value = true;
+  for(size_t i = 0; i < repr.length && is_valid_numeric_value; i++) {
     char digit = repr.data[i];
     value *= 10;
     if(isdigit(digit)) {
       value += digit - '0';
+    } else {
+      is_valid_numeric_value = false;
     }
   }
 
-  return value;
+  if(is_valid_numeric_value) {
+    *value_out = value;
+  } else {
+    *value_out = 0;
+  }
+
+  return is_valid_numeric_value;
 }
 
 
