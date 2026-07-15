@@ -50,6 +50,7 @@ void test_main(void);
  * Description: Push a new value onto the stack, crash if we cannot safely fit the value onto the stack.
  * @stacky: The virtual machine.
  * @value: The value to push
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
 */
 StackyErrorState stacky_push_value(Stacky *stacky, int64_t value) {
   assert(stacky != NULL);
@@ -64,6 +65,10 @@ StackyErrorState stacky_push_value(Stacky *stacky, int64_t value) {
   return STACKY_OK;
 }
 
+/* Description: Duplicate the value at the top of the stack
+ * @stacky: reference to the virtual machien
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
+ */
 StackyErrorState stacky_duplicate_value(Stacky *stacky) {
   assert(stacky != NULL);
 
@@ -86,7 +91,8 @@ StackyErrorState stacky_duplicate_value(Stacky *stacky) {
 /*
 * Description: Pop a value fromt the stack, crash if we cannot safely pop a value without risking an underflow.
 * @stacky: The virtual machine.
-* Returns: the popped value
+* __OUT__ @value_out: the popped value, should never be touched when the StackyErrorState does not indicate success
+* Returns: The indicated error if everything went well the error is "STACKY_OK"
 */
 StackyErrorState stacky_pop_value(Stacky *stacky, int64_t *value_out) {
   assert(stacky != NULL);
@@ -121,6 +127,11 @@ StackyErrorState stacky_dump_value(Stacky *stacky) {
   return STACKY_OK;
 }
 
+/* Description: Pop two values of the stack and push the result of the addition.
+ * @stacky: reference to the virtual machine
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
+ *
+ */
 StackyErrorState stacky_instruction_add(Stacky *stacky) {
   int64_t operand_a = 0;
   int64_t operand_b = 0;
@@ -140,6 +151,11 @@ StackyErrorState stacky_instruction_add(Stacky *stacky) {
   return stacky_push_value(stacky, result);
 }
 
+/* Description: Pop two values of the stack and push the result of the subtraction
+ * @stacky: reference to the virtual machine
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
+ *
+ */
 StackyErrorState stacky_instruction_sub(Stacky *stacky) {
   int64_t operand_a = 0;
   int64_t operand_b = 0;
@@ -159,6 +175,11 @@ StackyErrorState stacky_instruction_sub(Stacky *stacky) {
   return stacky_push_value(stacky, result);
 }
 
+/* Description: Pop two values of the stack and push the result of the division
+ * @stacky: reference to the virtual machine
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
+ *
+ */
 StackyErrorState stacky_instruction_div(Stacky *stacky) {
   int64_t operand_a = 0;
   int64_t operand_b = 0;
@@ -178,6 +199,10 @@ StackyErrorState stacky_instruction_div(Stacky *stacky) {
   return stacky_push_value(stacky, result);
 }
 
+/* Description: Pop two values of the stack and pusht the result of the multiplication
+ * @stacky: reference to the virtual machine
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
+ */
 StackyErrorState stacky_instruction_mul(Stacky *stacky) {
   int64_t operand_a = 0;
   int64_t operand_b = 0;
@@ -197,6 +222,11 @@ StackyErrorState stacky_instruction_mul(Stacky *stacky) {
   return stacky_push_value(stacky, result);
 }
 
+/* Description: Modifies the instruction pointer if the top of the stack is zero
+ * @stacky: reference to the virtual machine
+ * @absolute_offset: the new position of the instruction pointer when the jump is taken
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
+ */
 StackyErrorState stacky_instruction_jump_equal(Stacky *stacky, int64_t absolute_offset) {
   //NOTE(Kay): The compiler needs to make sure, that absolute offsets are always positive and never negative.
   //           That is why we assert here!
@@ -219,6 +249,11 @@ StackyErrorState stacky_instruction_jump_equal(Stacky *stacky, int64_t absolute_
   return state;
 }
 
+/* Description: Modifies the instruction pointer if the top of the stack is not zero
+ * @stacky: reference to the virtual machine
+ * @absolute_offset: the new position of the instruction pointer when the jump is taken
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
+ */
 StackyErrorState stacky_instruction_jump_not_equal(Stacky *stacky, int64_t absolute_offset) {
   //NOTE(Kay): The compiler needs to make sure, that absolute offsets are always positive and never negative.
   //           That is why we assert here!
@@ -247,6 +282,7 @@ StackyErrorState stacky_instruction_jump_not_equal(Stacky *stacky, int64_t absol
 /*
  * Description: Execute the next instruction that the instruction_pointer looks at.
  * @stacky - The virtual machine.
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
  */
 StackyErrorState stacky_execute_cycle(Stacky *stacky) {
   //TODO(Kay): The instruction_pointer++ might bite us in the ass later when there are relative jumps from the current
@@ -437,7 +473,27 @@ char *stacky_assembler_load_source_code_from_file(const char *file_path) {
   return buffer;
 }
 
-StackyInstruction stacky_assemble_instruction(LString source_line) {
+
+int64_t stacky_parse_numeric_argument(LString source_line, size_t line) {
+  int64_t converted_value = 0;
+
+  if(source_line.length == 0) {
+    fprintf(stderr, "stacky_compiler:%ld:error: instruction is missing a value `%.*s`\n",
+      line, (int)source_line.length, source_line.data);
+    exit(1);
+  }
+
+  LString value = lstring_split_by_delimiter(&source_line, ' ');
+
+  bool is_valid = lstring_to_integer_value(value, &converted_value);
+  if(!is_valid) {
+    fprintf(stderr, "stacky_compiler:%ld:error: value contains invalid characters `%.*s`", line, (int)value.length, value.data);
+    exit(1);
+  }
+
+  return converted_value;
+}
+StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
   assert(source_line.data != NULL);
 
   LString instruction = lstring_split_by_delimiter(&source_line, ' ');
@@ -445,13 +501,8 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
 
 
   if(lstring_compare_to_cstring(instruction, "push")) {
-    if(source_line.length == 0) {
-      fprintf(stderr, "stacky_compiler error: mnemonic `push` is missing a value that is pushed onto the stack original instruction is `%.*s`\n",
-              (int)source_line.length, source_line.data);
-    }
-    LString value = lstring_split_by_delimiter(&source_line, ' ');
-    int64_t converted_value = lstring_to_integer_value(value);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, converted_value };
+    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, value };
   }
   else if (lstring_compare_to_cstring(instruction, "dup")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUPLICATE, 0 };
@@ -466,25 +517,24 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, 0 };
   }
   else if (lstring_compare_to_cstring(instruction, "jmp")) {
-    LString value = lstring_split_by_delimiter(&source_line, ' ');
-    int64_t converted_value = lstring_to_integer_value(value);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP, converted_value };
+    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP, value};
   }
   else if (lstring_compare_to_cstring(instruction, "je")) {
-    LString value = lstring_split_by_delimiter(&source_line, ' ');
-    int64_t converted_value = lstring_to_integer_value(value);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_EQUAL, converted_value };
+    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_EQUAL, value};
   }
   else if (lstring_compare_to_cstring(instruction, "jne")) {
-    LString value = lstring_split_by_delimiter(&source_line, ' ');
-    int64_t converted_value = lstring_to_integer_value(value);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_NOT_EQUAL, converted_value };
+    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_NOT_EQUAL, value};
   }
   else if (lstring_compare_to_cstring(instruction, "halt")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_HALT, 0 };
   }
   else {
-    fprintf(stderr, "stacky_compiler error: unknown mnemonic with a length of %ld and a representation of `%.*s` encountered!\n", instruction.length, (int)instruction.length, instruction.data);
+    fprintf(stderr, "stacky_compiler:%ld:error: unknown mnemonic `%.*s` encountered!\n", 
+            line, (int)instruction.length, instruction.data);
+    exit(1);
   }
 
   return generated_instruction;
@@ -492,10 +542,12 @@ StackyInstruction stacky_assemble_instruction(LString source_line) {
 void stacky_assemble_file(Stacky *stacky, LString source_code) {
   assert(source_code.data != NULL);
 
+  size_t line = 1;
   while(source_code.length > 0) {
     LString source_line = lstring_split_by_delimiter(&source_code, '\n');
-    StackyInstruction assembled_instruction = stacky_assemble_instruction(source_line);
+    StackyInstruction assembled_instruction = stacky_parse_instruction(source_line, line);
     stacky_push_code_instruction(stacky, assembled_instruction);
+    line += 1;
   }
 }
 
@@ -505,6 +557,7 @@ void print_usage(void) {
   fprintf(stdout, "\trun     - run a bytecode file\n");
   fprintf(stdout, "\thelp    - print usage\n");
 }
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     print_usage();
@@ -545,7 +598,6 @@ int main(int argc, char **argv) {
     print_usage();
     exit(1);
   }
-  #endif
 
   return 0;
 }
