@@ -19,6 +19,20 @@ $ make stacky
 $ ./stacky
 ```
 
+## Usage
+
+### Compile
+
+To compile assembly into usable bytecode you can use the compile CLI flag:
+
+`$ ./stacky compile path/to/file` where `path/to/file` is the actual path to the assembly that needs to be compiled.
+
+### Run
+
+To run bytecode that was compiled for stacky use the `run` CLI command:
+
+`$ ./stacky run path/to/file` again `path/to/file` is the bytecode file to execute.
+
 ## Instructions
 
 Currently these Instructions are supported by the virtual machine
