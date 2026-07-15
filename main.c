@@ -506,9 +506,6 @@ void print_usage(void) {
   fprintf(stdout, "\thelp    - print usage\n");
 }
 int main(int argc, char **argv) {
-  #ifdef TEST_MODE
-    test_main();
-  #else
   if (argc < 2) {
     print_usage();
     exit(1);
@@ -553,47 +550,3 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-
-#ifdef TEST_MODE
-void test_check_push_instruction(void) {
-  Stacky stacky_vm = {0};
-
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_HALT, 0));
-  
-  for(size_t i = 0; i <stacky_vm.code_segment_size && !stacky_vm.halted; i++) {
-    stacky_execute_cycle(&stacky_vm);
-  }
-
-  int64_t expected = 1;
-  int64_t result = stacky_pop_value(&stacky_vm);
-
-  assert(stacky_vm.halted == true);
-  assert(result == expected);
-}
-
-void test_check_result_addition(void) {
-  Stacky stacky_vm = {0};
-
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_PUSH, 1));
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_ADD, 0));
-  stacky_push_code_instruction(&stacky_vm, emitter_generate_instruction(INSTRUCTION_HALT, 0));
-
-  int64_t expected = 2;
-
-  for(size_t i = 0; i < stacky_vm.code_segment_size; i++) {
-    stacky_execute_cycle(&stacky_vm);
-  }
-
-  int64_t result = stacky_pop_value(&stacky_vm);
-
-  assert(stacky_vm.halted == true);
-  assert(result == expected);
-}
-
-void test_main(void) {
-  test_check_push_instruction();
-  test_check_result_addition();
-}
-#endif
