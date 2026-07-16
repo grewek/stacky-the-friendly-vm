@@ -5,6 +5,7 @@
 
 #define STACK_MAX_CAPACITY 256
 #define CODE_SEGMENT_MAX_CAPACITY 1024
+#define DATA_SEGMENT_MAX_CAPACITY 1024*1024 //For now reserve 1MiB of Memory for the data segment
 
 typedef enum {
   STACKY_OK,
@@ -32,6 +33,21 @@ typedef enum {
   INSTRUCTION_HALT,
 } StackInstructionType;
 
+typedef enum {
+  STACKY_INT64,
+  STACKY_STRING,
+  STACKY_BOOL,
+} StackyDataTypeHeader;
+
+typedef struct {
+  StackyDataTypeHeader type;
+  union {
+    int64_t numeric_value;
+    LString string_value;
+    bool boolean_value;
+  };
+} StackyDataType;
+
 typedef struct {
   StackInstructionType opcode;
   int64_t argument; 
@@ -44,6 +60,7 @@ typedef struct {
   size_t instruction_pointer;
   size_t code_segment_size;
   StackyInstruction code_segment[CODE_SEGMENT_MAX_CAPACITY];
+  uint8_t data_segment[DATA_SEGMENT_MAX_CAPACITY];
 
   bool halted;
 } Stacky;
