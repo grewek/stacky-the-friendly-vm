@@ -136,13 +136,24 @@ LString lstring_split_by_delimiter(LString *source, const char delimiter) {
 bool lstring_to_integer_value(LString repr, int64_t *value_out) {
   assert(repr.data != NULL);
   int64_t value = 0;
-
+  int64_t sign = 1;
+  size_t index = 0;
   bool is_valid_numeric_value = true;
-  for(size_t i = 0; i < repr.length && is_valid_numeric_value; i++) {
-    char digit = repr.data[i];
+
+  if(repr.data[0] == '-') {
+    fprintf(stderr, "detected negative value\n");
+    sign = -1;
+    index = 1;
+  } else {
+    index = 0;
+  }
+
+  for(;index < repr.length && is_valid_numeric_value; index++) {
+    char digit = repr.data[index];
     value *= 10;
+
     if(isdigit(digit)) {
-      value += digit - '0';
+      value += sign * (digit - '0');
     } else {
       is_valid_numeric_value = false;
     }
