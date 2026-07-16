@@ -20,9 +20,14 @@ typedef enum {
   INSTRUCTION_SUB,
   INSTRUCTION_MUL,
   INSTRUCTION_DIV,
+  INSTRUCTION_CMP,
   INSTRUCTION_JUMP,
   INSTRUCTION_JUMP_EQUAL,
   INSTRUCTION_JUMP_NOT_EQUAL,
+  INSTRUCTION_JUMP_BIGGER,
+  INSTRUCTION_JUMP_BIGGER_EQUAL,
+  INSTRUCTION_JUMP_LOWER,
+  INSTRUCTION_JUMP_LOWER_EQUAL,
   INSTRUCTION_DUMP,
   INSTRUCTION_HALT,
 } StackInstructionType;
@@ -90,9 +95,9 @@ StackyErrorState stacky_duplicate_value(Stacky *stacky) {
 
 /*
 * Description: Pop a value fromt the stack, crash if we cannot safely pop a value without risking an underflow.
-* @stacky: The virtual machine.
+* @stacky: reference to the virtual machine 
 * __OUT__ @value_out: the popped value, should never be touched when the StackyErrorState does not indicate success
-* Returns: The indicated error if everything went well the error is "STACKY_OK"
+* Returns: the indicated error if everything went well the error is "STACKY_OK"
 */
 StackyErrorState stacky_pop_value(Stacky *stacky, int64_t *value_out) {
   assert(stacky != NULL);
@@ -112,6 +117,11 @@ StackyErrorState stacky_pop_value(Stacky *stacky, int64_t *value_out) {
   return STACKY_OK;
 }
 
+/*
+ * Description: Pop the top value from the stack and print it to the screen.
+ * @stacky: reference to the virtual machine
+ * Returns: the indicated error if everything went well the error is "STACKY_OK"
+ */
 StackyErrorState stacky_dump_value(Stacky *stacky) {
   assert(stacky != NULL);
   assert(stacky->stack_pointer >= 1);
@@ -222,6 +232,29 @@ StackyErrorState stacky_instruction_mul(Stacky *stacky) {
   return stacky_push_value(stacky, result);
 }
 
+/*
+ * Description: Compare the two top values on the stack by performing a subtraction, and putting the result back on the stack.
+ * @stacky: reference to the virtual machine
+ * Returns: The indicated error if everything went well the error is "STACKY_OK"
+ */
+StackyErrorState stacky_instruction_compare(Stacky *stacky) {
+  StackyErrorState result = STACKY_OK;
+
+  int64_t operand_a = 0;
+  int64_t operand_b = 0;
+  result = stacky_pop_value(stacky, &operand_b);
+  if(result != STACKY_OK) {
+    return result;
+  }
+
+  result = stacky_pop_value(stacky, &operand_a);
+  if(result != STACKY_OK) {
+    return result;
+  }
+
+  int64_t value = operand_a - operand_b;
+  return stacky_push_value(stacky, value);
+}
 /* Description: Modifies the instruction pointer if the top of the stack is zero
  * @stacky: reference to the virtual machine
  * @absolute_offset: the new position of the instruction pointer when the jump is taken
@@ -260,7 +293,6 @@ StackyErrorState stacky_instruction_jump_not_equal(Stacky *stacky, int64_t absol
   assert(absolute_offset >= 0);
 
   StackyErrorState state = STACKY_OK;
-  int64_t operand_a = stacky->stack[stacky->stack_pointer - 1];
 
   if(stacky->stack_pointer - 1 > 0) {
     int64_t operand_a = stacky->stack[stacky->stack_pointer - 1];
@@ -272,8 +304,72 @@ StackyErrorState stacky_instruction_jump_not_equal(Stacky *stacky, int64_t absol
     state = STACKY_OK;
   }
 
-  if(operand_a != 0) {
-    stacky->instruction_pointer = absolute_offset;
+  return state;
+}
+
+StackyErrorState stacky_instruction_jump_bigger(Stacky *stacky, int64_t absolute_offset) {
+  assert(absolute_offset >= 0);
+  StackyErrorState state = STACKY_OK;
+
+  if(stacky->stack_pointer - 1 > 0) {
+    int64_t operand = stacky->stack[stacky->stack_pointer - 1];
+
+    if(operand > 0) {
+      stacky->instruction_pointer = absolute_offset;
+    }
+
+    state = STACKY_OK;
+  }
+
+  return state;
+}
+
+StackyErrorState stacky_instruction_jump_bigger_equal(Stacky *stacky, int64_t absolute_offset) {
+  assert(absolute_offset >= 0);
+  StackyErrorState state = STACKY_OK;
+
+  if(stacky->stack_pointer - 1 > 0) {
+    int64_t operand = stacky->stack[stacky->stack_pointer - 1];
+
+    if(operand >= 0) {
+      stacky->instruction_pointer = absolute_offset;
+    }
+
+    state = STACKY_OK;
+  }
+
+  return state;
+}
+
+StackyErrorState stacky_instruction_jump_lower(Stacky *stacky, int64_t absolute_offset) {
+  assert(absolute_offset >= 0);
+  StackyErrorState state = STACKY_OK;
+
+  if(stacky->stack_pointer - 1 > 0) {
+    int64_t operand = stacky->stack[stacky->stack_pointer - 1];
+
+    if(operand <= 0) {
+      stacky->instruction_pointer = absolute_offset;
+    }
+
+    state = STACKY_OK;
+  }
+
+  return state;
+}
+
+StackyErrorState stacky_instruction_jump_lower_equal(Stacky *stacky, int64_t absolute_offset) {
+  assert(absolute_offset >= 0);
+  StackyErrorState state = STACKY_OK;
+
+  if(stacky->stack_pointer - 1 > 0) {
+    int64_t operand = stacky->stack[stacky->stack_pointer - 1];
+
+    if(operand <= 0) {
+      stacky->instruction_pointer = absolute_offset;
+    }
+
+    state = STACKY_OK;
   }
 
   return state;
@@ -324,6 +420,10 @@ StackyErrorState stacky_execute_cycle(Stacky *stacky) {
       result = stacky_instruction_mul(stacky);
       break;
     }
+    case INSTRUCTION_CMP: {
+      result = stacky_instruction_compare(stacky);
+      break;
+    }
     case INSTRUCTION_JUMP: {
       assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
       stacky->instruction_pointer = instruction.argument;
@@ -337,6 +437,26 @@ StackyErrorState stacky_execute_cycle(Stacky *stacky) {
     case INSTRUCTION_JUMP_NOT_EQUAL: {
       assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
       result = stacky_instruction_jump_not_equal(stacky, instruction.argument);
+      break;
+    }
+    case INSTRUCTION_JUMP_BIGGER: {
+      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_bigger(stacky, instruction.argument);
+      break;
+    }
+    case INSTRUCTION_JUMP_BIGGER_EQUAL: {
+      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_bigger_equal(stacky, instruction.argument);
+      break;
+    }
+    case INSTRUCTION_JUMP_LOWER: {
+      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_lower(stacky, instruction.argument);
+      break;
+    }
+    case INSTRUCTION_JUMP_LOWER_EQUAL: {
+      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_lower_equal(stacky, instruction.argument);
       break;
     }
     case INSTRUCTION_DUMP: {
@@ -513,6 +633,9 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
   else if (lstring_compare_to_cstring(instruction, "sub")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_SUB, 0 };
   }
+  else if (lstring_compare_to_cstring(instruction, "cmp")) {
+    generated_instruction = (StackyInstruction) { INSTRUCTION_CMP, 0 };
+  }
   else if (lstring_compare_to_cstring(instruction, "dump")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, 0 };
   }
@@ -527,6 +650,22 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
   else if (lstring_compare_to_cstring(instruction, "jne")) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_NOT_EQUAL, value};
+  }
+  else if (lstring_compare_to_cstring(instruction, "jb")) {
+    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_BIGGER, value };
+  }
+  else if (lstring_compare_to_cstring(instruction, "jbe")) {
+    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_BIGGER_EQUAL, value };
+  }
+  else if (lstring_compare_to_cstring(instruction, "jl")) {
+    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_LOWER, value };
+  }
+  else if (lstring_compare_to_cstring(instruction, "jle")) {
+    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_LOWER_EQUAL, value };
   }
   else if (lstring_compare_to_cstring(instruction, "halt")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_HALT, 0 };
