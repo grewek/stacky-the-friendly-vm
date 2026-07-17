@@ -507,22 +507,22 @@ StackyErrorState stacky_execute_cycle(Stacky *stacky) {
       break;
     }
     case INSTRUCTION_ADD: {
-      assert(instruction.argument.type == STACKY_VOID);
+      assert(instruction.argument.type == STACKY_INT64);
       result = stacky_instruction_add(stacky);
       break;
     }
     case INSTRUCTION_SUB: {
-      assert(instruction.argument.type == STACKY_VOID);
+      assert(instruction.argument.type == STACKY_INT64);
       result = stacky_instruction_sub(stacky);
       break;
     }
     case INSTRUCTION_DIV: {
-      assert(instruction.argument.type == STACKY_VOID);
+      assert(instruction.argument.type == STACKY_INT64);
       result = stacky_instruction_div(stacky);
       break;
     }
     case INSTRUCTION_MUL: {
-      assert(instruction.argument.type == STACKY_VOID);
+      assert(instruction.argument.type == STACKY_INT64);
       result = stacky_instruction_mul(stacky);
       break;
     }
