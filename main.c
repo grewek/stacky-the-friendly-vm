@@ -5,12 +5,13 @@
 
 #define STACK_MAX_CAPACITY 256
 #define CODE_SEGMENT_MAX_CAPACITY 1024
-#define DATA_SEGMENT_MAX_CAPACITY 1024*1024 //For now reserve 1MiB of Memory for the data segment
+#define DATA_SEGMENT_MAX_CAPACITY 1024*1024
 
 typedef enum {
   STACKY_OK,
   STACKY_STACK_OVERFLOW,
   STACKY_STACK_UNDERFLOW,
+  STACKY_MISMATCHED_DATATYPES,
 } StackyErrorState;
 
 typedef enum {
@@ -37,6 +38,7 @@ typedef enum {
   STACKY_INT64,
   STACKY_STRING,
   STACKY_BOOL,
+  STACKY_VOID,
 } StackyDataTypeHeader;
 
 typedef struct {
@@ -50,31 +52,33 @@ typedef struct {
 
 typedef struct {
   StackInstructionType opcode;
-  int64_t argument; 
+  StackyDataType argument; 
 } StackyInstruction;
 
 typedef struct {
   size_t stack_pointer;
-  int64_t stack[STACK_MAX_CAPACITY];
+  StackyDataType stack[STACK_MAX_CAPACITY];
 
   size_t instruction_pointer;
   size_t code_segment_size;
   StackyInstruction code_segment[CODE_SEGMENT_MAX_CAPACITY];
+
+  size_t data_segment_size;
   uint8_t data_segment[DATA_SEGMENT_MAX_CAPACITY];
 
   bool halted;
 } Stacky;
 
-#ifdef TEST_MODE
-void test_main(void);
-#endif
+StackyDataType stacky_create_void_type(void) {
+  return (StackyDataType) { .type = STACKY_VOID };
+}
 /*
  * Description: Push a new value onto the stack, crash if we cannot safely fit the value onto the stack.
  * @stacky: The virtual machine.
  * @value: The value to push
  * Returns: The indicated error if everything went well the error is "STACKY_OK"
 */
-StackyErrorState stacky_push_value(Stacky *stacky, int64_t value) {
+StackyErrorState stacky_push_value(Stacky *stacky, StackyDataType value) {
   assert(stacky != NULL);
 
   if(stacky->stack_pointer >= STACK_MAX_CAPACITY) {
@@ -82,7 +86,23 @@ StackyErrorState stacky_push_value(Stacky *stacky, int64_t value) {
     return STACKY_STACK_OVERFLOW;
   }
 
-  stacky->stack[stacky->stack_pointer++] = value;
+  //NOTE(Kay): Push datatypes that can live on the stack directly into it, in other cases like Strings we need to make some prep work.
+  switch(value.type) {
+    case STACKY_INT64: {
+      stacky->stack[stacky->stack_pointer++] = value;
+      break;
+    }
+    case STACKY_STRING: {
+      break;
+    }
+    case STACKY_BOOL: {
+      stacky->stack[stacky->stack_pointer++] = value;
+      break;
+    }
+    case STACKY_VOID: {
+      break;
+    }
+  }
 
   return STACKY_OK;
 }
@@ -104,7 +124,7 @@ StackyErrorState stacky_duplicate_value(Stacky *stacky) {
     return STACKY_STACK_UNDERFLOW;
   } 
 
-  int64_t top_value = stacky->stack[stacky->stack_pointer - 1];
+  StackyDataType top_value = stacky->stack[stacky->stack_pointer - 1];
   stacky->stack[stacky->stack_pointer++] = top_value;
 
   return STACKY_OK;
@@ -116,7 +136,7 @@ StackyErrorState stacky_duplicate_value(Stacky *stacky) {
 * __OUT__ @value_out: the popped value, should never be touched when the StackyErrorState does not indicate success
 * Returns: the indicated error if everything went well the error is "STACKY_OK"
 */
-StackyErrorState stacky_pop_value(Stacky *stacky, int64_t *value_out) {
+StackyErrorState stacky_pop_value(Stacky *stacky, StackyDataType *value_out) {
   assert(stacky != NULL);
 
   if(stacky->stack_pointer < 1) {
@@ -127,7 +147,7 @@ StackyErrorState stacky_pop_value(Stacky *stacky, int64_t *value_out) {
   if(value_out != NULL) {
     *value_out = stacky->stack[--stacky->stack_pointer];
   } else {
-    int64_t value = stacky->stack[--stacky->stack_pointer];
+    StackyDataType value = stacky->stack[--stacky->stack_pointer];
     (void)value;
   }
 
@@ -148,8 +168,23 @@ StackyErrorState stacky_dump_value(Stacky *stacky) {
     return STACKY_STACK_UNDERFLOW;
   }
 
-  int64_t value = stacky->stack[stacky->stack_pointer - 1];
-  fprintf(stdout, "DUMP [%ld]\n", value);
+  StackyDataType value = stacky->stack[stacky->stack_pointer - 1];
+
+  switch(value.type) {
+    case STACKY_INT64: {
+      fprintf(stdout, "DUMP [%ld]\n", value.numeric_value);
+      break;
+    }
+    case STACKY_STRING: {
+      break;
+    }
+    case STACKY_BOOL: {
+      break;
+    }
+    case STACKY_VOID: {
+      break;
+    }
+  }
 
   return STACKY_OK;
 }
@@ -160,8 +195,8 @@ StackyErrorState stacky_dump_value(Stacky *stacky) {
  *
  */
 StackyErrorState stacky_instruction_add(Stacky *stacky) {
-  int64_t operand_a = 0;
-  int64_t operand_b = 0;
+  StackyDataType operand_a = stacky_create_void_type();
+  StackyDataType operand_b = stacky_create_void_type();
 
   StackyErrorState success_b = stacky_pop_value(stacky, &operand_b);
   if(success_b != STACKY_OK) {
@@ -173,9 +208,13 @@ StackyErrorState stacky_instruction_add(Stacky *stacky) {
     return success_a;
   }
 
-  int64_t result = operand_a + operand_b;
-
-  return stacky_push_value(stacky, result);
+  if(operand_a.type == STACKY_INT64 && operand_b.type == STACKY_INT64) {
+    int64_t value = operand_a.numeric_value + operand_b.numeric_value;
+    StackyDataType result = { .type = STACKY_INT64, .numeric_value = value };
+    return stacky_push_value(stacky, result);
+  } else {
+    return STACKY_MISMATCHED_DATATYPES;
+  }
 }
 
 /* Description: Pop two values of the stack and push the result of the subtraction
@@ -184,8 +223,8 @@ StackyErrorState stacky_instruction_add(Stacky *stacky) {
  *
  */
 StackyErrorState stacky_instruction_sub(Stacky *stacky) {
-  int64_t operand_a = 0;
-  int64_t operand_b = 0;
+  StackyDataType operand_a = stacky_create_void_type();
+  StackyDataType operand_b = stacky_create_void_type();
 
   StackyErrorState success_b = stacky_pop_value(stacky, &operand_b);
   if(success_b != STACKY_OK) {
@@ -197,9 +236,13 @@ StackyErrorState stacky_instruction_sub(Stacky *stacky) {
     return success_a;
   }
 
-  int64_t result = operand_a - operand_b;
-
-  return stacky_push_value(stacky, result);
+  if(operand_a.type == STACKY_INT64 && operand_b.type == STACKY_INT64) {
+    int64_t value = operand_a.numeric_value - operand_b.numeric_value;
+    StackyDataType result = { .type = STACKY_INT64, .numeric_value = value };
+    return stacky_push_value(stacky, result);
+  } else {
+    return STACKY_MISMATCHED_DATATYPES;
+  }
 }
 
 /* Description: Pop two values of the stack and push the result of the division
@@ -208,8 +251,8 @@ StackyErrorState stacky_instruction_sub(Stacky *stacky) {
  *
  */
 StackyErrorState stacky_instruction_div(Stacky *stacky) {
-  int64_t operand_a = 0;
-  int64_t operand_b = 0;
+  StackyDataType operand_a = stacky_create_void_type();
+  StackyDataType operand_b = stacky_create_void_type();
 
   StackyErrorState success_b = stacky_pop_value(stacky, &operand_b);
   if(success_b != STACKY_OK) {
@@ -221,9 +264,14 @@ StackyErrorState stacky_instruction_div(Stacky *stacky) {
     return success_a;
   }
 
-  int64_t result = operand_a / operand_b;
+  if(operand_a.type == STACKY_INT64 && operand_b.type == STACKY_INT64) {
+    int64_t value = operand_a.numeric_value / operand_b.numeric_value;
+    StackyDataType result = { .type = STACKY_INT64, .numeric_value = value };
+    return stacky_push_value(stacky, result);
+  } else {
+    return STACKY_MISMATCHED_DATATYPES;
+  }
 
-  return stacky_push_value(stacky, result);
 }
 
 /* Description: Pop two values of the stack and pusht the result of the multiplication
@@ -231,8 +279,8 @@ StackyErrorState stacky_instruction_div(Stacky *stacky) {
  * Returns: The indicated error if everything went well the error is "STACKY_OK"
  */
 StackyErrorState stacky_instruction_mul(Stacky *stacky) {
-  int64_t operand_a = 0;
-  int64_t operand_b = 0;
+  StackyDataType operand_a = stacky_create_void_type();
+  StackyDataType operand_b = stacky_create_void_type();
 
   StackyErrorState success_b = stacky_pop_value(stacky, &operand_b);
   if(success_b != STACKY_OK) {
@@ -244,9 +292,13 @@ StackyErrorState stacky_instruction_mul(Stacky *stacky) {
     return success_a;
   }
 
-  int64_t result = operand_a * operand_b;
-
-  return stacky_push_value(stacky, result);
+  if(operand_a.type == STACKY_INT64 && operand_b.type == STACKY_INT64) {
+    int64_t value = operand_a.numeric_value * operand_b.numeric_value;
+    StackyDataType result = { .type = STACKY_INT64, .numeric_value = value };
+    return stacky_push_value(stacky, result);
+  } else {
+    return STACKY_MISMATCHED_DATATYPES;
+  }
 }
 
 /*
@@ -257,9 +309,10 @@ StackyErrorState stacky_instruction_mul(Stacky *stacky) {
 StackyErrorState stacky_instruction_compare(Stacky *stacky) {
   StackyErrorState result = STACKY_OK;
 
-  int64_t operand_a = 0;
-  int64_t operand_b = 0;
+  StackyDataType operand_a = stacky_create_void_type();
+  StackyDataType operand_b = stacky_create_void_type();
   result = stacky_pop_value(stacky, &operand_b);
+
   if(result != STACKY_OK) {
     return result;
   }
@@ -269,8 +322,13 @@ StackyErrorState stacky_instruction_compare(Stacky *stacky) {
     return result;
   }
 
-  int64_t value = operand_a - operand_b;
-  return stacky_push_value(stacky, value);
+  if(operand_a.type == STACKY_INT64 && operand_b.type  == STACKY_INT64) {
+    int64_t value = operand_a.numeric_value - operand_b.numeric_value;
+    StackyDataType comparision_result = { .type = STACKY_INT64, .numeric_value = value };
+    return stacky_push_value(stacky, comparision_result);
+  } else {
+    return STACKY_MISMATCHED_DATATYPES;
+  }
 }
 /* Description: Modifies the instruction pointer if the top of the stack is zero
  * @stacky: reference to the virtual machine
@@ -284,14 +342,17 @@ StackyErrorState stacky_instruction_jump_equal(Stacky *stacky, int64_t absolute_
   StackyErrorState state = STACKY_OK;
 
   if(stacky->stack_pointer - 1 > 0) {
-    int64_t operand_a = stacky->stack[stacky->stack_pointer - 1];
+    StackyDataType operand_a = stacky->stack[stacky->stack_pointer - 1];
 
-    if(operand_a == 0) {
-      stacky->instruction_pointer = absolute_offset;
+    if(operand_a.type == STACKY_INT64) {
+      if(operand_a.numeric_value == 0) {
+        stacky->instruction_pointer = absolute_offset;
+      }
+
+      state = STACKY_OK;
+    } else {
+      state = STACKY_MISMATCHED_DATATYPES;
     }
-
-    state = STACKY_OK;
-
   } else {
     state = STACKY_STACK_UNDERFLOW;
   }
@@ -312,13 +373,20 @@ StackyErrorState stacky_instruction_jump_not_equal(Stacky *stacky, int64_t absol
   StackyErrorState state = STACKY_OK;
 
   if(stacky->stack_pointer - 1 > 0) {
-    int64_t operand_a = stacky->stack[stacky->stack_pointer - 1];
+    StackyDataType operand_a = stacky->stack[stacky->stack_pointer - 1];
     
-    if(operand_a != 0) {
-      stacky->instruction_pointer = absolute_offset;
-    }
+    if(operand_a.type == STACKY_INT64) {
+      if(operand_a.numeric_value != 0) {
+        stacky->instruction_pointer = absolute_offset;
+      }
 
-    state = STACKY_OK;
+      state = STACKY_OK;
+    } else {
+      state = STACKY_MISMATCHED_DATATYPES;
+    }
+    
+  } else {
+    state = STACKY_STACK_UNDERFLOW;
   }
 
   return state;
@@ -329,13 +397,19 @@ StackyErrorState stacky_instruction_jump_bigger(Stacky *stacky, int64_t absolute
   StackyErrorState state = STACKY_OK;
 
   if(stacky->stack_pointer - 1 > 0) {
-    int64_t operand = stacky->stack[stacky->stack_pointer - 1];
+    StackyDataType operand = stacky->stack[stacky->stack_pointer - 1];
 
-    if(operand > 0) {
-      stacky->instruction_pointer = absolute_offset;
+    if(operand.type == STACKY_INT64) {
+      if(operand.numeric_value > 0) {
+        stacky->instruction_pointer = absolute_offset;
+      }
+
+      state = STACKY_OK;
+    } else {
+      state = STACKY_MISMATCHED_DATATYPES;
     }
-
-    state = STACKY_OK;
+  } else {
+    state = STACKY_STACK_UNDERFLOW;
   }
 
   return state;
@@ -346,13 +420,18 @@ StackyErrorState stacky_instruction_jump_bigger_equal(Stacky *stacky, int64_t ab
   StackyErrorState state = STACKY_OK;
 
   if(stacky->stack_pointer - 1 > 0) {
-    int64_t operand = stacky->stack[stacky->stack_pointer - 1];
+    StackyDataType operand = stacky->stack[stacky->stack_pointer - 1];
 
-    if(operand >= 0) {
-      stacky->instruction_pointer = absolute_offset;
+    if(operand.type == STACKY_INT64) {
+      if(operand.numeric_value >= 0) {
+        stacky->instruction_pointer = absolute_offset;
+        state = STACKY_OK;
+      }
+    } else {
+      state = STACKY_MISMATCHED_DATATYPES;
     }
-
-    state = STACKY_OK;
+  } else {
+    state = STACKY_MISMATCHED_DATATYPES;
   }
 
   return state;
@@ -363,13 +442,18 @@ StackyErrorState stacky_instruction_jump_lower(Stacky *stacky, int64_t absolute_
   StackyErrorState state = STACKY_OK;
 
   if(stacky->stack_pointer - 1 > 0) {
-    int64_t operand = stacky->stack[stacky->stack_pointer - 1];
+    StackyDataType operand = stacky->stack[stacky->stack_pointer - 1];
 
-    if(operand <= 0) {
-      stacky->instruction_pointer = absolute_offset;
+    if(operand.type == STACKY_INT64) {
+      if(operand.numeric_value <= 0) {
+        stacky->instruction_pointer = absolute_offset;
+        state = STACKY_OK;
+      }
+    } else {
+      state = STACKY_MISMATCHED_DATATYPES;
     }
-
-    state = STACKY_OK;
+  } else {
+    state = STACKY_STACK_UNDERFLOW;
   }
 
   return state;
@@ -380,13 +464,18 @@ StackyErrorState stacky_instruction_jump_lower_equal(Stacky *stacky, int64_t abs
   StackyErrorState state = STACKY_OK;
 
   if(stacky->stack_pointer - 1 > 0) {
-    int64_t operand = stacky->stack[stacky->stack_pointer - 1];
+    StackyDataType operand = stacky->stack[stacky->stack_pointer - 1];
 
-    if(operand <= 0) {
-      stacky->instruction_pointer = absolute_offset;
+    if(operand.type == STACKY_INT64) {
+      if(operand.numeric_value <= 0) {
+        stacky->instruction_pointer = absolute_offset;
+      }
+      state = STACKY_OK;
+    } else {
+      state = STACKY_MISMATCHED_DATATYPES;
     }
-
-    state = STACKY_OK;
+  } else {
+    state = STACKY_STACK_UNDERFLOW;
   }
 
   return state;
@@ -413,27 +502,27 @@ StackyErrorState stacky_execute_cycle(Stacky *stacky) {
       break;
     }
     case INSTRUCTION_POP: {
-      int64_t value = 0;
+      StackyDataType value = stacky_create_void_type();
       result = stacky_pop_value(stacky, &value);
       break;
     }
     case INSTRUCTION_ADD: {
-      assert(instruction.argument == 0);
+      assert(instruction.argument.type == STACKY_VOID);
       result = stacky_instruction_add(stacky);
       break;
     }
     case INSTRUCTION_SUB: {
-      assert(instruction.argument == 0);
+      assert(instruction.argument.type == STACKY_VOID);
       result = stacky_instruction_sub(stacky);
       break;
     }
     case INSTRUCTION_DIV: {
-      assert(instruction.argument == 0);
+      assert(instruction.argument.type == STACKY_VOID);
       result = stacky_instruction_div(stacky);
       break;
     }
     case INSTRUCTION_MUL: {
-      assert(instruction.argument == 0);
+      assert(instruction.argument.type == STACKY_VOID);
       result = stacky_instruction_mul(stacky);
       break;
     }
@@ -442,38 +531,38 @@ StackyErrorState stacky_execute_cycle(Stacky *stacky) {
       break;
     }
     case INSTRUCTION_JUMP: {
-      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
-      stacky->instruction_pointer = instruction.argument;
+      assert(instruction.argument.type == STACKY_INT64 && instruction.argument.numeric_value >= 0 && instruction.argument.numeric_value < CODE_SEGMENT_MAX_CAPACITY);
+      stacky->instruction_pointer = instruction.argument.numeric_value;
       break;
     }
     case INSTRUCTION_JUMP_EQUAL: {
-      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
-      result = stacky_instruction_jump_equal(stacky, instruction.argument);
+      assert(instruction.argument.type == STACKY_INT64 && instruction.argument.numeric_value  >= 0 && instruction.argument.numeric_value < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_equal(stacky, instruction.argument.numeric_value);
       break;
     }
     case INSTRUCTION_JUMP_NOT_EQUAL: {
-      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
-      result = stacky_instruction_jump_not_equal(stacky, instruction.argument);
+      assert(instruction.argument.type == STACKY_INT64 && instruction.argument.numeric_value  >= 0 && instruction.argument.numeric_value < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_not_equal(stacky, instruction.argument.numeric_value);
       break;
     }
     case INSTRUCTION_JUMP_BIGGER: {
-      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
-      result = stacky_instruction_jump_bigger(stacky, instruction.argument);
+      assert(instruction.argument.type == STACKY_INT64 && instruction.argument.numeric_value  >= 0 && instruction.argument.numeric_value < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_bigger(stacky, instruction.argument.numeric_value);
       break;
     }
     case INSTRUCTION_JUMP_BIGGER_EQUAL: {
-      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
-      result = stacky_instruction_jump_bigger_equal(stacky, instruction.argument);
+      assert(instruction.argument.type == STACKY_INT64 && instruction.argument.numeric_value  >= 0 && instruction.argument.numeric_value < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_bigger_equal(stacky, instruction.argument.numeric_value);
       break;
     }
     case INSTRUCTION_JUMP_LOWER: {
-      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
-      result = stacky_instruction_jump_lower(stacky, instruction.argument);
+      assert(instruction.argument.type == STACKY_INT64 && instruction.argument.numeric_value  >= 0 && instruction.argument.numeric_value < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_lower(stacky, instruction.argument.numeric_value);
       break;
     }
     case INSTRUCTION_JUMP_LOWER_EQUAL: {
-      assert(instruction.argument >= 0 && instruction.argument < CODE_SEGMENT_MAX_CAPACITY);
-      result = stacky_instruction_jump_lower_equal(stacky, instruction.argument);
+      assert(instruction.argument.type == STACKY_INT64 && instruction.argument.numeric_value  >= 0 && instruction.argument.numeric_value < CODE_SEGMENT_MAX_CAPACITY);
+      result = stacky_instruction_jump_lower_equal(stacky, instruction.argument.numeric_value);
       break;
     }
     case INSTRUCTION_DUMP: {
@@ -507,7 +596,7 @@ void stacky_push_code_instruction(Stacky *stacky, StackyInstruction instruction)
  * @argument: optional argument, should be set to zero if no arguments are necessary for this operation
  * returns: the generated instruction
  */
-StackyInstruction emitter_generate_instruction(StackInstructionType opcode, int64_t argument) {
+StackyInstruction emitter_generate_instruction(StackInstructionType opcode, StackyDataType argument) {
   StackyInstruction result = {
     .opcode = opcode,
     .argument = argument
@@ -637,55 +726,56 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
   StackyInstruction generated_instruction;
 
 
+  //TODO(Kay): It's time to create a constructor for the StackyDataType variants.
   if(lstring_compare_to_cstring(instruction, "push")) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, value };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "dup")) {
-    generated_instruction = (StackyInstruction) { INSTRUCTION_DUPLICATE, 0 };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_DUPLICATE, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
   }
   else if (lstring_compare_to_cstring(instruction, "add")) {
-    generated_instruction = (StackyInstruction) { INSTRUCTION_ADD, 0 };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_ADD, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
   }
   else if (lstring_compare_to_cstring(instruction, "sub")) {
-    generated_instruction = (StackyInstruction) { INSTRUCTION_SUB, 0 };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_SUB, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
   }
   else if (lstring_compare_to_cstring(instruction, "cmp")) {
-    generated_instruction = (StackyInstruction) { INSTRUCTION_CMP, 0 };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_CMP, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
   }
   else if (lstring_compare_to_cstring(instruction, "dump")) {
-    generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, 0 };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
   }
   else if (lstring_compare_to_cstring(instruction, "jmp")) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP, value};
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "je")) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_EQUAL, value};
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_EQUAL, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jne")) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_NOT_EQUAL, value};
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_NOT_EQUAL, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jb")) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_BIGGER, value };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_BIGGER, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jbe")) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_BIGGER_EQUAL, value };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_BIGGER_EQUAL, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jl")) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_LOWER, value };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_LOWER, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jle")) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_LOWER_EQUAL, value };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_LOWER_EQUAL, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "halt")) {
-    generated_instruction = (StackyInstruction) { INSTRUCTION_HALT, 0 };
+    generated_instruction = (StackyInstruction) { INSTRUCTION_HALT, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
   }
   else {
     fprintf(stderr, "stacky_compiler:%ld:error: unknown mnemonic `%.*s` encountered!\n", 
