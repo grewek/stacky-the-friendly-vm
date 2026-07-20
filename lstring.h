@@ -14,6 +14,7 @@ typedef struct {
 } LString;
 
 
+
 /*
  * Description: Generate a LString from an exsisting c string
  * @string-data - a valid pointer to a zero terminated c string
@@ -25,6 +26,25 @@ LString lstring_from_cstring(const char *string_data) {
     .length= strlen(string_data),
     .data = string_data,
   };
+
+  return result;
+}
+
+bool lstring_starts_with_character(LString lstring, const char character) {
+  bool result = false;
+  if(lstring.length > 0 && lstring.data[0] == character) {
+    result = true;
+  }
+
+  return result;
+}
+
+bool lstring_ends_with_character(LString lstring, const char character) {
+
+  bool result = false;
+  if(lstring.length > 0 && lstring.data[lstring.length - 1] == character) {
+    result = true;
+  }
 
   return result;
 }
