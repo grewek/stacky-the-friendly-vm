@@ -16,6 +16,7 @@ typedef enum {
 
 typedef enum {
   INSTRUCTION_PUSH,
+  INSTRUCTION_STORE_DATA,
   INSTRUCTION_DUPLICATE,
   INSTRUCTION_POP,
   INSTRUCTION_ADD,
@@ -731,6 +732,18 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
     int64_t value = stacky_parse_numeric_argument(source_line, line);
     generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
+  else if(lstring_compare_to_cstring(instruction, "store")) {
+    fprintf(stdout, "%.*s\n", (int)source_line.length, source_line.data);
+    if(lstring_starts_with_character(source_line, '"') && lstring_ends_with_character(source_line, '"')) {
+      source_line.length -= 1;
+      source_line.data += 1;
+      generated_instruction = (StackyInstruction) { INSTRUCTION_STORE_DATA, (StackyDataType) { .type = STACKY_STRING, .string_value = (LString) { .length = source_line.length, .data = source_line.data }}};
+    } else {
+      //TODO(Kay): If none of the above symbols mactches we have an error!
+      fprintf(stderr, "stack_compiler:%ld:error: expected \" but got %c", line, source_line.data[0]);
+      exit(1);
+    }
+  }
   else if (lstring_compare_to_cstring(instruction, "dup")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUPLICATE, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
   }
@@ -785,6 +798,14 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
 
   return generated_instruction;
 }
+
+void stacky_push_data(Stacky *stacky, StackyDataType *data) {
+  if(data->type == STACKY_STRING) {
+    size_t *length_pointer = (size_t *) stacky->data_segment; 
+    length_pointer[stacky->code_segment_size] = data->string_value.length;
+  }
+}
+
 void stacky_assemble_file(Stacky *stacky, LString source_code) {
   assert(source_code.data != NULL);
 
@@ -792,6 +813,9 @@ void stacky_assemble_file(Stacky *stacky, LString source_code) {
   while(source_code.length > 0) {
     LString source_line = lstring_split_by_delimiter(&source_code, '\n');
     StackyInstruction assembled_instruction = stacky_parse_instruction(source_line, line);
+    if(assembled_instruction.opcode == INSTRUCTION_STORE_DATA) {
+      stacky_push_data(stacky, &assembled_instruction.argument);
+    }
     stacky_push_code_instruction(stacky, assembled_instruction);
     line += 1;
   }
