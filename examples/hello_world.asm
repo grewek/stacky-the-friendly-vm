@@ -1,3 +1,3 @@
-store "hello world"
+push "hello world"
 dump
 halt
