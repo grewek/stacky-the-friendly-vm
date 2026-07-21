@@ -7,6 +7,8 @@
 #define CODE_SEGMENT_MAX_CAPACITY 1024
 #define DATA_SEGMENT_MAX_CAPACITY 1024*1024
 
+#define UNUSED_PARAMETER(param) (void)param
+
 typedef enum {
   STACKY_OK,
   STACKY_STACK_OVERFLOW,
@@ -37,7 +39,7 @@ typedef enum {
 
 typedef enum {
   STACKY_INT64,
-  STACKY_STRING,
+  STACKY_CONST_STRING,
   STACKY_STRING_PTR,
   STACKY_BOOL,
   STACKY_VOID,
@@ -95,7 +97,10 @@ StackyErrorState stacky_push_value(Stacky *stacky, StackyDataType value) {
       stacky->stack[stacky->stack_pointer++] = value;
       break;
     }
-    case STACKY_STRING: {
+    case STACKY_CONST_STRING: {
+      //NOTE(Kay): This is an error, we should never store constant string values onto the stack directly
+      fprintf(stderr, "stacky_vm:push:tried to put a constant string directly onto the stack panic!\n");
+      exit(1);
       break;
     }
     case STACKY_STRING_PTR: {
@@ -157,7 +162,7 @@ StackyErrorState stacky_pop_value(Stacky *stacky, StackyDataType *value_out) {
     *value_out = stacky->stack[--stacky->stack_pointer];
   } else {
     StackyDataType value = stacky->stack[--stacky->stack_pointer];
-    (void)value;
+    UNUSED_PARAMETER(value);
   }
 
   return STACKY_OK;
@@ -184,7 +189,9 @@ StackyErrorState stacky_dump_value(Stacky *stacky) {
       fprintf(stdout, "DUMP [%ld]\n", value.numeric_value);
       break;
     }
-    case STACKY_STRING: {
+    case STACKY_CONST_STRING: {
+      fprintf(stderr, "stacky_vm:dump:error: invalid operation, constant string should be internalized to ptrs exiting!\n");
+      exit(1);
       break;
     }
     case STACKY_STRING_PTR: {
@@ -738,7 +745,7 @@ char *stacky_assembler_load_source_code_from_file(const char *file_path) {
 }
 
 
-int64_t stacky_parse_numeric_argument(LString source_line, size_t line) {
+int64_t stacky_parse_numeric_argument(LString source_line, size_t line, const char delimiter) {
   int64_t converted_value = 0;
 
   if(source_line.length == 0) {
@@ -747,7 +754,7 @@ int64_t stacky_parse_numeric_argument(LString source_line, size_t line) {
     exit(1);
   }
 
-  LString value = lstring_split_by_delimiter(&source_line, ' ');
+  LString value = lstring_split_by_delimiter(&source_line, delimiter);
 
   bool is_valid = lstring_to_integer_value(value, &converted_value);
   if(!is_valid) {
@@ -756,6 +763,32 @@ int64_t stacky_parse_numeric_argument(LString source_line, size_t line) {
   }
 
   return converted_value;
+}
+
+StackyInstruction stacky_parse_int64_array(LString source_line, size_t line) {
+  //TODO(Kay): Parse all elements that are contained inside the array into buffer that is on the heap.
+  UNUSED_PARAMETER(source_line);
+  UNUSED_PARAMETER(line);
+}
+StackyInstruction stacky_parse_push_instruction(LString source_line, size_t line) {
+  StackyInstruction generated_instruction = {0};
+  if(lstring_is_numeric(source_line)) {
+    int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
+    generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
+  } else if (lstring_starts_with_character(source_line, '"') && lstring_ends_with_character(source_line, '"')) {
+    source_line.length -= 2;
+    source_line.data += 1;
+    generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, (StackyDataType) { .type = STACKY_CONST_STRING, .string_value = (LString) { .length = source_line.length, .data = source_line.data }}};
+  } else if (lstring_starts_with_character(source_line, '[') && lstring_ends_with_character(source_line, ']')) {
+    source_line.length -= 2;
+    source_line.data += 1;
+    //TODO(Kay): Add support for INT64_T sized arrays.
+  } else {
+    fprintf(stderr, "stack_compiler:%ld:error: expected \" but got %c", line, source_line.data[0]);
+    exit(1);
+  }
+
+  return generated_instruction;
 }
 StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
   assert(source_line.data != NULL);
@@ -766,20 +799,7 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
 
   //TODO(Kay): It's time to create a constructor for the StackyDataType variants.
   if(lstring_compare_to_cstring(instruction, "push")) {
-    int64_t value = stacky_parse_numeric_argument(source_line, line);
-    generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
-  }
-  else if(lstring_compare_to_cstring(instruction, "store")) {
-    fprintf(stdout, "%.*s\n", (int)source_line.length, source_line.data);
-    if(lstring_starts_with_character(source_line, '"') && lstring_ends_with_character(source_line, '"')) {
-      source_line.length -= 2;
-      source_line.data += 1;
-      generated_instruction = (StackyInstruction) { INSTRUCTION_STORE_DATA, (StackyDataType) { .type = STACKY_STRING, .string_value = (LString) { .length = source_line.length, .data = source_line.data }}};
-    } else {
-      //TODO(Kay): If none of the above symbols mactches we have an error!
-      fprintf(stderr, "stack_compiler:%ld:error: expected \" but got %c", line, source_line.data[0]);
-      exit(1);
-    }
+    generated_instruction = stacky_parse_push_instruction(source_line, line);
   }
   else if (lstring_compare_to_cstring(instruction, "dup")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUPLICATE, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
@@ -797,31 +817,31 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUMP, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
   }
   else if (lstring_compare_to_cstring(instruction, "jmp")) {
-    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "je")) {
-    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_EQUAL, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jne")) {
-    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_NOT_EQUAL, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jb")) {
-    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_BIGGER, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jbe")) {
-    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_BIGGER_EQUAL, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jl")) {
-    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_LOWER, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "jle")) {
-    int64_t value = stacky_parse_numeric_argument(source_line, line);
+    int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
     generated_instruction = (StackyInstruction) { INSTRUCTION_JUMP_LOWER_EQUAL, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
   }
   else if (lstring_compare_to_cstring(instruction, "halt")) {
@@ -837,19 +857,18 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
 }
 
 void stacky_push_data(Stacky *stacky, StackyDataType *data) {
-  if(data->type == STACKY_STRING) {
-    //Remember where we put our string in the data segment
-    uint32_t data_segment_string_start = stacky->data_segment_size;
-    //Copy the data
-    memcpy(stacky->data_segment + stacky->data_segment_size, &data->string_value.length, sizeof(size_t));
-    stacky->data_segment_size += sizeof(size_t);
-    memcpy(stacky->data_segment + stacky->data_segment_size, data->string_value.data, data->string_value.length);
-    stacky->data_segment_size += data->string_value.length;
+  //Remember where we put our string in the data segment
+  uint32_t data_segment_string_start = stacky->data_segment_size;
 
-    //Change the type, as the original data isn't available anymore when we are done! But we did put the data into the data segment of stacky.
-    data->type = STACKY_STRING_PTR;
-    data->string_pointer = data_segment_string_start;
-  }
+  //Copy the data
+  memcpy(stacky->data_segment + stacky->data_segment_size, &data->string_value.length, sizeof(size_t));
+  stacky->data_segment_size += sizeof(size_t);
+  memcpy(stacky->data_segment + stacky->data_segment_size, data->string_value.data, data->string_value.length);
+  stacky->data_segment_size += data->string_value.length;
+
+  //Change the type, as the original data isn't available anymore when we are done! But we did put the data into the data segment of stacky.
+  data->type = STACKY_STRING_PTR;
+  data->string_pointer = data_segment_string_start;
 }
 
 void stacky_assemble_file(Stacky *stacky, LString source_code) {
@@ -859,7 +878,7 @@ void stacky_assemble_file(Stacky *stacky, LString source_code) {
   while(source_code.length > 0) {
     LString source_line = lstring_split_by_delimiter(&source_code, '\n');
     StackyInstruction assembled_instruction = stacky_parse_instruction(source_line, line);
-    if(assembled_instruction.opcode == INSTRUCTION_STORE_DATA) {
+    if(assembled_instruction.opcode == INSTRUCTION_PUSH && assembled_instruction.argument.type == STACKY_CONST_STRING) {
       stacky_push_data(stacky, &assembled_instruction.argument);
       assembled_instruction.opcode = INSTRUCTION_PUSH;
     }
