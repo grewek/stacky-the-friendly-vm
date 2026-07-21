@@ -39,6 +39,28 @@ bool lstring_starts_with_character(LString lstring, const char character) {
   return result;
 }
 
+bool lstring_is_numeric(LString lstring) {
+
+  bool numeric_value = false;
+  size_t start_position = 0;
+  if(lstring.data[0] == '-') {
+    start_position = 1;
+  } else {
+    start_position = 0;
+  }
+
+  for(size_t i = start_position; i < lstring.length; i++) {
+    if(isdigit(lstring.data[i])) {
+      numeric_value = true;
+    }
+    else {
+      numeric_value = false;
+    }
+  }
+
+  return numeric_value;
+}
+
 bool lstring_ends_with_character(LString lstring, const char character) {
 
   bool result = false;
