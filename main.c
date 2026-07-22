@@ -41,9 +41,16 @@ typedef enum {
   STACKY_INT64,
   STACKY_CONST_STRING,
   STACKY_STRING_PTR,
+  STACKY_ARRAY_INT64,
+  STACKY_ARRAY_PTR,
   STACKY_BOOL,
   STACKY_VOID,
 } StackyDataTypeHeader;
+
+typedef struct {
+  size_t array_length;
+  int64_t *array_data;
+} StackyInt64Array;
 
 typedef struct {
   StackyDataTypeHeader type;
@@ -52,6 +59,8 @@ typedef struct {
     LString string_value;
     bool boolean_value;
     uint32_t string_pointer;
+    StackyInt64Array array_elements;
+    uint32_t array_pointer;
   };
 } StackyDataType;
 
@@ -104,6 +113,15 @@ StackyErrorState stacky_push_value(Stacky *stacky, StackyDataType value) {
       break;
     }
     case STACKY_STRING_PTR: {
+      stacky->stack[stacky->stack_pointer++] = value;
+      break;
+    }
+    case STACKY_ARRAY_INT64: {
+      fprintf(stderr, "stacky_vm:push:tried to put a int64 array directly onto the stack panic!\n");
+      exit(1);
+      break;
+    }
+    case STACKY_ARRAY_PTR: {
       stacky->stack[stacky->stack_pointer++] = value;
       break;
     }
@@ -201,6 +219,14 @@ StackyErrorState stacky_dump_value(Stacky *stacky) {
       temp_repr.data = (const char *)stacky->data_segment + sizeof(size_t) + value.string_pointer; 
       fprintf(stdout, "DUMP [\"%.*s\"]", (int)temp_repr.length, temp_repr.data);
       break;
+    }
+    case STACKY_ARRAY_INT64: {
+      fprintf(stderr, "stacky_vm:dump:error: invalid operation, arrays should exist on the data segment, not on the stack directly.");
+      exit(1);
+      break;
+    }
+    case STACKY_ARRAY_PTR: {
+      //TODO(Kay): Print out the array.
     }
     case STACKY_BOOL: {
       break;
@@ -758,7 +784,7 @@ int64_t stacky_parse_numeric_argument(LString source_line, size_t line, const ch
 
   bool is_valid = lstring_to_integer_value(value, &converted_value);
   if(!is_valid) {
-    fprintf(stderr, "stacky_compiler:%ld:error: value contains invalid characters `%.*s`", line, (int)value.length, value.data);
+    fprintf(stderr, "stacky_compiler:%ld:error: value contains invalid characters `%.*s`\n", line, (int)value.length, value.data);
     exit(1);
   }
 
@@ -766,12 +792,34 @@ int64_t stacky_parse_numeric_argument(LString source_line, size_t line, const ch
 }
 
 StackyInstruction stacky_parse_int64_array(LString source_line, size_t line) {
-  //TODO(Kay): Parse all elements that are contained inside the array into buffer that is on the heap.
-  UNUSED_PARAMETER(source_line);
-  UNUSED_PARAMETER(line);
+  StackyInstruction result = { INSTRUCTION_PUSH, (StackyDataType) {0} };
+  StackyInt64Array array = {0};
+  array.array_data = calloc(8, sizeof(int64_t));
+
+  while(source_line.length > 0) {
+    LString raw_value = lstring_trim(source_line);
+    raw_value = lstring_split_by_delimiter(&source_line, ' ');
+    int64_t element_value;
+
+    if(raw_value.length > 0) {
+      if(lstring_to_integer_value(raw_value, &element_value)) {
+        array.array_data[array.array_length] = element_value;
+        array.array_length += 1;
+      } else {
+        fprintf(stderr, "stacky_compiler:%ld:error: expected an integer value but got %.*s", line, (int)raw_value.length, raw_value.data);
+      }
+    } else {
+    }
+  }
+
+  result.argument = (StackyDataType) { .type = STACKY_ARRAY_INT64, .array_elements = array };
+  return result;
 }
+
 StackyInstruction stacky_parse_push_instruction(LString source_line, size_t line) {
   StackyInstruction generated_instruction = {0};
+  fprintf(stderr, "token: `%.*s`", (int)source_line.length, source_line.data);
+  source_line = lstring_trim(source_line);
   if(lstring_is_numeric(source_line)) {
     int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
     generated_instruction = (StackyInstruction) { INSTRUCTION_PUSH, (StackyDataType) { .type = STACKY_INT64, .numeric_value = value } };
@@ -782,7 +830,7 @@ StackyInstruction stacky_parse_push_instruction(LString source_line, size_t line
   } else if (lstring_starts_with_character(source_line, '[') && lstring_ends_with_character(source_line, ']')) {
     source_line.length -= 2;
     source_line.data += 1;
-    //TODO(Kay): Add support for INT64_T sized arrays.
+    generated_instruction = stacky_parse_int64_array(source_line, line);
   } else {
     fprintf(stderr, "stack_compiler:%ld:error: expected \" but got %c", line, source_line.data[0]);
     exit(1);
@@ -856,7 +904,7 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
   return generated_instruction;
 }
 
-void stacky_push_data(Stacky *stacky, StackyDataType *data) {
+void stacky_push_string_data(Stacky *stacky, StackyDataType *data) {
   //Remember where we put our string in the data segment
   uint32_t data_segment_string_start = stacky->data_segment_size;
 
@@ -871,6 +919,24 @@ void stacky_push_data(Stacky *stacky, StackyDataType *data) {
   data->string_pointer = data_segment_string_start;
 }
 
+void stacky_push_int64_array_data(Stacky *stacky, StackyDataType *data) {
+  for(size_t i = 0; i < data->array_elements.array_length; i++) {
+    fprintf(stderr, "element %ld contains %ld\n", i, data->array_elements.array_data[i]);
+  }
+
+  uint32_t data_segment_array_start = stacky->data_segment_size;
+
+  //TODO(Kay): Fix the static length!
+  memcpy(stacky->data_segment + stacky->data_segment_size, &data->array_elements.array_length, sizeof(size_t));
+  stacky->data_segment_size += sizeof(size_t);
+
+  memcpy(stacky->data_segment + stacky->data_segment_size, data->array_elements.array_data, data->array_elements.array_length * sizeof(int64_t));
+  stacky->data_segment_size += 8 * sizeof(int64_t);
+
+  data->type = STACKY_ARRAY_PTR;
+  data->array_pointer = data_segment_array_start;
+}
+
 void stacky_assemble_file(Stacky *stacky, LString source_code) {
   assert(source_code.data != NULL);
 
@@ -879,9 +945,12 @@ void stacky_assemble_file(Stacky *stacky, LString source_code) {
     LString source_line = lstring_split_by_delimiter(&source_code, '\n');
     StackyInstruction assembled_instruction = stacky_parse_instruction(source_line, line);
     if(assembled_instruction.opcode == INSTRUCTION_PUSH && assembled_instruction.argument.type == STACKY_CONST_STRING) {
-      stacky_push_data(stacky, &assembled_instruction.argument);
+      stacky_push_string_data(stacky, &assembled_instruction.argument);
       assembled_instruction.opcode = INSTRUCTION_PUSH;
+    } else if(assembled_instruction.opcode == INSTRUCTION_PUSH && assembled_instruction.argument.type == STACKY_ARRAY_INT64) {
+      stacky_push_int64_array_data(stacky, &assembled_instruction.argument);
     }
+
     stacky_push_code_instruction(stacky, assembled_instruction);
     line += 1;
   }
