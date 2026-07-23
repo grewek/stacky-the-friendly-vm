@@ -25,13 +25,21 @@ $ ./stacky
 
 To compile assembly into usable bytecode you can use the compile CLI flag:
 
-`$ ./stacky compile path/to/file` where `path/to/file` is the actual path to the assembly that needs to be compiled.
+`$ ./stacky compile path/to/file output_file.sbc` where `path/to/file` is the actual path to the assembly that needs to be compiled. The name and path
+of the second parameter can be freely chosen.
 
 ### Run
 
 To run bytecode that was compiled for stacky use the `run` CLI command:
 
-`$ ./stacky run path/to/file` again `path/to/file` is the bytecode file to execute.
+`$ ./stacky run path/to/bytecode_file` again `path/to/bytecode_file` is the bytecode file to execute.
+
+## Data Segment
+
+Stacky can store integers, strings and arrays of integers, these last two elements however are not stored directly 
+onto the stack, instead they are stored inside the data segment of the `.sbc` file. The stack only contains a pointer
+to the actual data, also arrays have a maximum size of 1024 elements per array instance. This is due to time constraints 
+as a variable sized array would need the implementation of a dynamic array.
 
 ## Instructions
 
@@ -41,9 +49,19 @@ Currently these Instructions are supported by the virtual machine
 
 Pushes the value to the stack.
 
-Argument: __Immediate value__
+Possible arguments: __Immediate value__, __String__, __Array__
 
-Syntax: `push [immediate value]`
+Syntax: `push [immediate value] | push "<string>" | push [<number> <number> ...]`
+
+__Note__: Values inside of an array are seperated by a space not a comma.
+
+### Pop
+
+Removes the current value at the top of the stack
+
+Arguments: __None__
+
+Syntax: `pop`
 
 ### Duplicate
 
@@ -84,6 +102,14 @@ Divide the two values at the top of the stack and push the result.
 Argument: __None__
 
 Syntax: `div`
+
+### Compare
+
+Compares the two top values by doing a subtraction, then stores the result onto the top of the stack
+
+Argument: __None__
+
+Syntax: `cmp`
 
 ### Jump
 
