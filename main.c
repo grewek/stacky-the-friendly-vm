@@ -217,7 +217,7 @@ StackyErrorState stacky_dump_value(Stacky *stacky) {
       memcpy(&temp_repr.length, (size_t *)(stacky->data_segment + value.string_pointer), sizeof(size_t));
 
       temp_repr.data = (const char *)stacky->data_segment + sizeof(size_t) + value.string_pointer; 
-      fprintf(stdout, "DUMP [\"%.*s\"]", (int)temp_repr.length, temp_repr.data);
+      fprintf(stdout, "\"%.*s\"\n", (int)temp_repr.length, temp_repr.data);
       break;
     }
     case STACKY_ARRAY_INT64: {
@@ -226,7 +226,17 @@ StackyErrorState stacky_dump_value(Stacky *stacky) {
       break;
     }
     case STACKY_ARRAY_PTR: {
-      //TODO(Kay): Print out the array.
+      StackyInt64Array temp_array = {0};
+      memcpy(&temp_array.array_length, (size_t *)(stacky->data_segment + value.array_pointer), sizeof(size_t));
+      temp_array.array_data = (int64_t *)(stacky->data_segment + sizeof(size_t) + value.array_pointer);
+
+      fprintf(stdout, "[ ");
+      for(size_t i = 0; i < temp_array.array_length; i++) {
+        fprintf(stdout, "%ld ", temp_array.array_data[i]);
+      }
+      fprintf(stdout, "]\n");
+
+      break;
     }
     case STACKY_BOOL: {
       break;
@@ -794,17 +804,22 @@ int64_t stacky_parse_numeric_argument(LString source_line, size_t line, const ch
 StackyInstruction stacky_parse_int64_array(LString source_line, size_t line) {
   StackyInstruction result = { INSTRUCTION_PUSH, (StackyDataType) {0} };
   StackyInt64Array array = {0};
-  array.array_data = calloc(8, sizeof(int64_t));
+  //NOTE(Kay): A dynamic array would be necessary to make things scale on the go,
+  //           but due to the self set time constraints this a amount of 1024 elements has to suffice.
+  array.array_data = calloc(1024, sizeof(int64_t));
 
   while(source_line.length > 0) {
-    LString raw_value = lstring_trim(source_line);
-    raw_value = lstring_split_by_delimiter(&source_line, ' ');
+    LString raw_value = lstring_split_by_delimiter(&source_line, ' ');
     int64_t element_value;
 
     if(raw_value.length > 0) {
       if(lstring_to_integer_value(raw_value, &element_value)) {
-        array.array_data[array.array_length] = element_value;
-        array.array_length += 1;
+        if(array.array_length < 1024) {
+          array.array_data[array.array_length] = element_value;
+          array.array_length += 1;
+        } else {
+          fprintf(stderr, "stacky_compiler:%ld:error: too many elements, the stacky machine only supports arrays with a maximum of 1024 elements per array.\n", line);
+        }
       } else {
         fprintf(stderr, "stacky_compiler:%ld:error: expected an integer value but got %.*s", line, (int)raw_value.length, raw_value.data);
       }
@@ -818,7 +833,6 @@ StackyInstruction stacky_parse_int64_array(LString source_line, size_t line) {
 
 StackyInstruction stacky_parse_push_instruction(LString source_line, size_t line) {
   StackyInstruction generated_instruction = {0};
-  fprintf(stderr, "token: `%.*s`", (int)source_line.length, source_line.data);
   source_line = lstring_trim(source_line);
   if(lstring_is_numeric(source_line)) {
     int64_t value = stacky_parse_numeric_argument(source_line, line, ' ');
@@ -851,6 +865,9 @@ StackyInstruction stacky_parse_instruction(LString source_line, size_t line) {
   }
   else if (lstring_compare_to_cstring(instruction, "dup")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_DUPLICATE, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
+  }
+  else if (lstring_compare_to_cstring(instruction, "pop")) {
+    generated_instruction = (StackyInstruction) { INSTRUCTION_POP, (StackyDataType) {.type = STACKY_VOID } };
   }
   else if (lstring_compare_to_cstring(instruction, "add")) {
     generated_instruction = (StackyInstruction) { INSTRUCTION_ADD, (StackyDataType) { .type = STACKY_INT64, .numeric_value = 0 } };
@@ -920,18 +937,13 @@ void stacky_push_string_data(Stacky *stacky, StackyDataType *data) {
 }
 
 void stacky_push_int64_array_data(Stacky *stacky, StackyDataType *data) {
-  for(size_t i = 0; i < data->array_elements.array_length; i++) {
-    fprintf(stderr, "element %ld contains %ld\n", i, data->array_elements.array_data[i]);
-  }
-
   uint32_t data_segment_array_start = stacky->data_segment_size;
 
-  //TODO(Kay): Fix the static length!
   memcpy(stacky->data_segment + stacky->data_segment_size, &data->array_elements.array_length, sizeof(size_t));
   stacky->data_segment_size += sizeof(size_t);
 
   memcpy(stacky->data_segment + stacky->data_segment_size, data->array_elements.array_data, data->array_elements.array_length * sizeof(int64_t));
-  stacky->data_segment_size += 8 * sizeof(int64_t);
+  stacky->data_segment_size += data->array_elements.array_length * sizeof(int64_t);
 
   data->type = STACKY_ARRAY_PTR;
   data->array_pointer = data_segment_array_start;
